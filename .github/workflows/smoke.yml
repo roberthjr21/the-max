@@ -2,7 +2,7 @@ name: Probar APK publicado en Android
 on:
   push:
     branches: [main]
-    paths: ['downloads/latest.json', '.github/workflows/smoke.yml']
+    paths: ['downloads/latest.json', 'scripts/smoke-android.sh', '.github/workflows/smoke.yml']
   workflow_dispatch:
 permissions:
   contents: read
