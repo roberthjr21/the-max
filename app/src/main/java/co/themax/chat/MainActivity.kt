@@ -37,6 +37,17 @@ private val demo by lazy { analyze("""21/11/26, 9:00 - Tú: Buenos días ☀️
 22/11/26, 10:15 - Luna 💗: Me encantó el café ✨""") }
 
 class MainActivity : ComponentActivity() {
+    private class ChatState : androidx.lifecycle.ViewModel() {
+        var result by mutableStateOf<Report?>(null)
+        var pending by mutableStateOf<Report?>(null)
+        var me by mutableStateOf("")
+    }
+    private val chat by lazy {
+        androidx.lifecycle.ViewModelProvider(this, object : androidx.lifecycle.ViewModelProvider.Factory {
+            @Suppress("UNCHECKED_CAST")
+            override fun <T : androidx.lifecycle.ViewModel> create(type: Class<T>): T = ChatState() as T
+        })[ChatState::class.java]
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent { MaterialTheme(colorScheme = lightColorScheme(primary = green)) { Screen() } }
@@ -45,10 +56,10 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun Screen() {
         val scope = rememberCoroutineScope()
-        var result by remember { mutableStateOf<Report?>(null) }
-        var pending by remember { mutableStateOf<Report?>(null) }
-        var me by remember { mutableStateOf("") }
-        var hidden by remember { mutableStateOf(false) }
+        var result by chat::result
+        var pending by chat::pending
+        var me by chat::me
+        var hidden by rememberSaveable { mutableStateOf(false) }
         var busy by remember { mutableStateOf(false) }
         var notice by remember { mutableStateOf<String?>(null) }
         var update by remember { mutableStateOf<Update?>(null) }
@@ -82,7 +93,7 @@ class MainActivity : ComponentActivity() {
         LaunchedEffect(Unit) {
             @Suppress("DEPRECATION")
             val uri = intent.takeIf { it.action == Intent.ACTION_SEND }?.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
-            if (uri != null) load(uri)
+            if (uri != null && result == null && pending == null) load(uri)
         }
         val report = result ?: demo
         val self = if (result == null) demo.names.first() else me
@@ -107,7 +118,7 @@ class MainActivity : ComponentActivity() {
                 Tile("Quién rompe el silencio",0xffffb6cf,"tú" to (report.starts[self] ?: 0).toString(),label to (report.starts[other] ?: 0).toString(),note="Cuenta el inicio del chat y las pausas de 8 horas o más."),
                 Tile("Primer mensaje",0xffffe8a6,detail=report.first.body.trim().take(200),note=if (report.first.sender == self) "Lo enviaste tú" else "Lo envió $label"),
                 Tile("Su día más activo",0xffffd8c3,detail=report.peak),
-                Tile("Palabras favoritas",0xffbce5fb,detail=report.words.joinToString(" · ").ifEmpty { "Sin palabras frecuentes" })
+                Tile("Palabras favoritas",0xffbce5fb,detail=report.words.joinToString(" · ").ifEmpty { "Sin palabras frecuentes" },note=report.emoji?.let { "Emoji más usado: $it" } ?: "")
             )
             cards.forEachIndexed { i, tile ->
                 TileView(tile, if (i == 0) ({
