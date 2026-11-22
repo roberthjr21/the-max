@@ -33,7 +33,7 @@ unzip -p artifact.zip app-release-unsigned.apk > unsigned.apk
 unzip -p "$backup" the-max.p12 > key.p12
 unzip -p "$backup" password.txt > password
 echo 'Firmando el APK…'
-apksigner sign --key-pass file:password --ks key.p12 --ks-pass file:password --ks-key-alias the-max --v4-signing-enabled false --out signed.apk unsigned.apk
+apksigner sign --ks key.p12 --ks-pass file:password --ks-key-alias the-max --v4-signing-enabled false --out signed.apk unsigned.apk
 certificate() { apksigner verify --print-certs "$1" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p'; }
 echo 'Comprobando la firma con la versión anterior…'
 previous=$(certificate source/downloads/The-Max-2.apk)
