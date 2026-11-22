@@ -167,8 +167,10 @@ class MainActivity : ComponentActivity() {
     }
 }
 private fun delayText(n: Long?) = when (n) { null -> "Sin datos"; 0L -> "<1 min"; else -> "$n min" }
+data class Metric(val label: String, val self: Int, val other: Int)
+data class Comparison(val contact: String, val rows: List<Metric>)
 data class Tile(val title: String,val tint: Long,val left: Pair<String,String>? = null,val right: Pair<String,String>? = null,
-    val detail: String = "",val note: String = "")
+    val detail: String = "",val note: String = "", val comparison: Comparison? = null, val examples: List<String> = emptyList())
 
 @Composable
 private fun TileView(tile: Tile, action: (() -> Unit)?, actionLabel: String, share: (() -> Unit)?) {
@@ -185,6 +187,32 @@ private fun TileView(tile: Tile, action: (() -> Unit)?, actionLabel: String, sha
                 }
             }
         } else Text(tile.detail,fontWeight = FontWeight.SemiBold,fontSize = 20.sp,lineHeight = 27.sp,color = ink)
+        tile.comparison?.let { data ->
+            Column(Modifier.fillMaxWidth().background(Color.White.copy(alpha=.6f), RoundedCornerShape(14.dp)).padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row {
+                    Spacer(Modifier.weight(1.5f))
+                    Text("Tú",Modifier.weight(1f),fontWeight=FontWeight.Bold,color=ink,textAlign=TextAlign.End)
+                    Text(data.contact,Modifier.weight(1f),fontWeight=FontWeight.Bold,color=ink,textAlign=TextAlign.End)
+                }
+                data.rows.forEach { metric ->
+                    HorizontalDivider(color=ink.copy(alpha=.12f))
+                    Row(verticalAlignment=Alignment.CenterVertically) {
+                        Text(metric.label,Modifier.weight(1.5f),color=ink,fontSize=14.sp)
+                        Text(metric.self.toString(),Modifier.weight(1f),color=ink,textAlign=TextAlign.End)
+                        Text(metric.other.toString(),Modifier.weight(1f),color=ink,textAlign=TextAlign.End)
+                    }
+                }
+            }
+        }
+        if (tile.examples.isNotEmpty()) {
+            var open by remember(tile) { mutableStateOf(false) }
+            OutlinedButton(onClick={ open = !open }) { Text(if (open) "Ocultar ejemplos" else "Ver ejemplos del chat") }
+            if (open) {
+                Text("Primer ejemplo de cada categoría por persona. Solo aparece en esta pantalla.",color=ink,fontSize=13.sp)
+                tile.examples.forEach { Text(it,color=ink,fontSize=15.sp,lineHeight=21.sp) }
+            }
+        }
         if (tile.note.isNotEmpty()) { HorizontalDivider(color = ink.copy(alpha = .15f)); Text(tile.note,color = ink,fontSize = 14.sp,lineHeight = 20.sp) }
         if (action != null) Button(onClick = action,modifier = Modifier.fillMaxWidth()) { Text(actionLabel) }
         if (share != null) TextButton(onClick = share) { Text("Compartir tarjeta",color = ink) }

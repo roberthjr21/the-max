@@ -34,6 +34,10 @@ grep -Fq 'text="2"' /tmp/themax-ui.xml
 grep -Fq 'text="1"' /tmp/themax-ui.xml
 
 if [ "$code" -ge 2 ]; then
+  titles=('Nivel de interés' 'Mensaje más largo' 'Red flags' 'Lo que notamos' 'Palabras top' 'Estilo de apego' 'Cómo fue el chat' '¿Te dejó en visto?' 'The Move' 'Lo que podría querer decirte' 'Solo ustedes dos dicen esto')
+  if [ "$code" -ge 4 ]; then
+    titles=('Nivel de interés' 'Mensaje más largo' 'Red flags' 'Cuántas veces cambiaron de turno' 'Palabras top' 'Quién suele dar el primer paso' 'Cómo fue el chat' 'Respuestas después de una pausa' 'Qué podrías responder' 'Lo que podría querer decirte' 'Expresiones que ambos usan')
+  fi
   size=$(adb shell wm size | tail -1 | awk '{print $NF}' | tr -d '\r')
   width=${size%x*}
   height=${size#*x}
@@ -41,9 +45,9 @@ if [ "$code" -ge 2 ]; then
     adb shell input swipe "$((width/2))" "$((height*3/4))" "$((width/2))" "$((height/3))" 500
     adb shell uiautomator dump /sdcard/themax-ui.xml >/dev/null
     adb exec-out cat /sdcard/themax-ui.xml >> /tmp/themax-scroll.xml
-    if grep -Fq 'Solo ustedes dos dicen esto' /tmp/themax-scroll.xml; then break; fi
+    if grep -Fq "${titles[-1]}" /tmp/themax-scroll.xml; then break; fi
   done
-  for title in 'Nivel de interés' 'Mensaje más largo' 'Red flags' 'Lo que notamos' 'Palabras top' 'Estilo de apego' 'Cómo fue el chat' '¿Te dejó en visto?' 'The Move' 'Lo que podría querer decirte' 'Solo ustedes dos dicen esto'; do
+  for title in "${titles[@]}"; do
     grep -Fq "$title" /tmp/themax-scroll.xml
   done
 fi

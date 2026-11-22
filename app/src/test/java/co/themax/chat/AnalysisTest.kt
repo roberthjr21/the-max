@@ -57,6 +57,21 @@ segunda línea
         assertTrue(flagReasons("¿Me pasas la clave del wifi?").isEmpty())
         assertEquals(2,flagReasons("Te prohíbo salir. Me las vas a pagar.").size)
     }
+    @Test fun explainsSignalsAndKeepsExamplesSeparateFromSharedSummary() {
+        val report = analyze("""21/11/26, 09:00 - Ana: Hola
+21/11/26, 09:01 - Sol: Nunca te voy a pegar
+22/11/26, 09:01 - Sol: Pásame tu contraseña
+22/11/26, 09:02 - Sol: Dame tu contraseña""")
+        val tiles = insightCards(report,"Ana","Sol","Otra persona")
+        val flags = tiles.single { it.title == "Red flags" }
+        assertEquals(2,flags.comparison!!.rows.single().other)
+        assertEquals(1,flags.examples.size)
+        assertTrue(flags.examples.single().contains("Otra persona"))
+        assertFalse(flags.detail.contains("Pásame"))
+        val interest = tiles.single { it.title == "Nivel de interés" }
+        assertEquals(Metric("Inicios de conversación",1,1),interest.comparison!!.rows.first())
+        assertTrue(interest.detail.contains("Los dos"))
+    }
     @Test fun thirtyMessages() {
         val chat = (1..30).joinToString("\n") { "21/11/26, 09:%02d - %s: hola".format(it,if (it%2==0) "Ana" else "Sol") }
         assertEquals(mapOf("Ana" to 15,"Sol" to 15),analyze(chat).counts)

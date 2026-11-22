@@ -7,6 +7,7 @@ data class PersonStats(
     var questions: Int = 0, var turns: Int = 0, var longPauses: Int = 0,
     var plans: Int = 0, var availability: Int = 0, var pressure: Int = 0,
     var longest: String = "", var longestLength: Int = 0, var tokens: Int = 0,
+    val examples: MutableMap<String, String> = linkedMapOf(),
     val flagTypes: MutableMap<String, Int> = linkedMapOf(),
     val words: MutableMap<String, Int> = mutableMapOf(),
     val phrases: MutableMap<String, Int> = mutableMapOf()
@@ -37,7 +38,14 @@ fun collectInsights(rows: List<Message>): Insights {
         if (availability.containsMatchIn(lower)) p.availability++
         val reasons = flagReasons(body)
         if (reasons.isNotEmpty()) p.pressure++
-        for (reason in reasons) p.flagTypes.merge(reason, 1, Int::plus)
+        for (reason in reasons) {
+            p.flagTypes.merge(reason, 1, Int::plus)
+            if (reason !in p.examples) {
+                val date = message.time.toLocalDate()
+                val excerpt = body.take(240) + if (body.length > 240) "…" else ""
+                p.examples[reason] = "${date.dayOfMonth}/${date.monthValue}/${date.year} · «$excerpt»"
+            }
+        }
         var prev = ""
         for (match in word.findAll(lower)) {
             if (p.tokens >= tokenLimit) break
@@ -74,11 +82,6 @@ fun insightCards(report: Report, self: String, other: String, label: String): Li
         else -> "«¿Qué fue lo mejor que te pasó esta semana?»"
     }
     val terms = if (maxOf(a.tokens,b.tokens) >= tokenLimit) " Primeras 24.000 palabras por persona." else ""
-    fun participation(person: PersonStats, sender: String): String {
-        if (report.counts.getValue(sender) < 5 || data.activeDays < 2) return "Muestra pequeña"
-        val signals = listOf(person.questions > 0, person.plans > 0, (report.starts[sender] ?: 0) > 0).count { it }
-        return listOf("Pocas señales", "Una señal", "Dos señales", "Tres señales")[signals]
-    }
     val initiative = report.starts[self] ?: 0
     val theirs = report.starts[other] ?: 0
     val rhythm = when {
@@ -89,29 +92,46 @@ fun insightCards(report: Report, self: String, other: String, label: String): Li
     }
     fun card(title: String, color: Long, value: String, note: String) = Tile(title,color,detail=value,note=note)
     return listOf(
-        card("Nivel de interés",0xffb8f2dc, "Tú · ${participation(a,self)}\n$label · ${participation(b,other)}", "Indicador de participación: preguntar, sugerir planes y abrir conversaciones. Preguntas: ${a.questions} / ${b.questions}. Posibles planes: ${a.plans} / ${b.plans}. No mide atracción."),
+        Tile("Nivel de interés",0xffb8f2dc,detail=when {
+            data.activeDays == 1 -> "Solo vemos un día de conversación."
+            initiative > 0 && theirs > 0 -> "Los dos han dado el primer paso para hablar."
+            initiative > 0 -> "Tú abriste cada conversación registrada."
+            else -> "$label abrió cada conversación registrada."
+        }, note="Un inicio es el primer mensaje del archivo o el primero tras 8 horas de pausa. Estos datos describen cómo conversan; la atracción solo pueden aclararla ustedes.",
+            comparison = Comparison(label, listOf(
+                Metric("Inicios de conversación",initiative,theirs),
+                Metric("Mensajes con preguntas",a.questions,b.questions),
+                Metric("Posibles invitaciones",a.plans,b.plans)
+            ))),
         card("Mensaje más largo",0xffffe6ab, most.longest.ifEmpty { "Sin texto disponible" },
             "$author · ${most.longestLength} caracteres." + if (most.longestLength > 360) " Se muestra el comienzo." else ""),
-        card("Red flags",0xffffbfd1,
-            if (a.pressure + b.pressure == 0) "Sin coincidencias en las categorías revisadas"
-            else listOf("Tú" to a, label to b).joinToString("\n\n") { (name, person) ->
-                val breakdown = person.flagTypes.entries.joinToString(" · ") { "${it.key}: ${it.value}" }
-                "$name · ${person.pressure} mensajes" + if (breakdown.isEmpty()) "" else "\n$breakdown"
-            }, "Se revisan amenazas, control, presión emocional y peticiones de contraseñas. Un mensaje puede aparecer en varias categorías. Lee el contexto antes de sacar conclusiones."),
-        card("Lo que notamos",0xffc7dbfa, "Hubo ${a.turns+b.turns} turnos en ${data.activeDays} días con mensajes.", "Varios mensajes seguidos de la misma persona cuentan como un turno."),
+        Tile("Red flags",0xffffbfd1,
+            detail=when (val total = a.pressure + b.pressure) {
+                0 -> "No encontramos frases que coincidan con los patrones revisados."
+                1 -> "Hay un mensaje que vale la pena leer con contexto."
+                else -> "Hay $total mensajes que vale la pena leer con contexto."
+            }, note="Buscamos expresiones de amenaza, control, presión o acceso a cuentas. Una frase puede tener varios motivos. El tono y la historia entre ustedes también importan.",
+            comparison = if (a.pressure+b.pressure == 0) null else Comparison(label,
+                (a.flagTypes.keys + b.flagTypes.keys).sorted().map { reason ->
+                    Metric(reason,a.flagTypes[reason] ?: 0,b.flagTypes[reason] ?: 0)
+                }),
+            examples = listOf("Tú" to a, label to b).flatMap { (name, person) ->
+                person.examples.map { (reason, excerpt) -> "$name · $reason\n$excerpt" }
+            }),
+        card("Cuántas veces cambiaron de turno",0xffc7dbfa, "La conversación pasó de una persona a otra ${a.turns+b.turns-1} veces.", "Varios mensajes seguidos de la misma persona cuentan como un turno."),
         card("Palabras top",0xfffbd4bc, "Tú: ${top(a)}\n\n$label: ${top(b)}", "Frecuencias individuales, sin palabras comunes.$terms"),
-        card("Estilo de apego",0xffe1cef8, "$rhythm Inicios: $initiative tuyos y $theirs de $label.",
+        card("Quién suele dar el primer paso",0xffe1cef8, "$rhythm Inicios: $initiative tuyos y $theirs de $label.",
             "Describe la iniciativa en este chat. Para conocer el apego hacen falta más contexto y la perspectiva de cada persona."),
         card("Cómo fue el chat",0xffffe7b5, "${data.days} días entre el primer y último día, contando ambos. Se escribieron en ${data.activeDays}.", "El resumen cubre únicamente el período exportado."),
-        card("¿Te dejó en visto?",0xffffc7dc, "$label volvió a responder tras 8 horas o más en ${b.longPauses} cambios de turno.",
+        card("Respuestas después de una pausa",0xffffc7dc, "$label volvió a responder tras 8 horas o más en ${b.longPauses} cambios de turno.",
             "La exportación no incluye confirmaciones de lectura. Solo se cuentan las pausas con una respuesta posterior."),
-        card("The Move",0xffb2efd6,suggest,"Idea para tu próxima respuesta, basada en patrones del chat."),
+        card("Qué podrías responder",0xffb2efd6,suggest,"Idea para tu próxima respuesta, basada en patrones del chat."),
         card("Lo que podría querer decirte",0xffc8e4ff, when {
             b.plans > 0 -> "Aparecen posibles propuestas de verse. Podrías preguntar: «¿Te gustaría que cuadráramos ese plan?»"
             b.availability > 0 -> "Mencionó hablar después. Podrías preguntarle cuándo le queda cómodo."
             else -> "No hay una intención explícita que podamos identificar. Puedes preguntar: «¿Cómo te has sentido hablando conmigo?»"
         }, "Lectura posible de sus palabras. Solo esa persona puede confirmar lo que quiso decir."),
-        card("Solo ustedes dos dicen esto",0xffe6d2f9,shared.ifEmpty { "Todavía no encontramos una expresión compartida." },
+        card("Expresiones que ambos usan",0xffe6d2f9,shared.ifEmpty { "Todavía no encontramos una expresión compartida." },
             "Pares de palabras que ambos escribieron. La comparación solo incluye este chat.$terms")
     )
 }

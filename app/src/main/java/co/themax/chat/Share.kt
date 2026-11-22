@@ -32,6 +32,10 @@ fun shareCard(context: Context, tile: Tile) {
         y = line(pair.second,y,76f,1) + 20
     }
     if (tile.detail.isNotEmpty()) y = line(tile.detail,y,50f,5) + 24
+    tile.comparison?.let { comparison ->
+        y = line("Tú / " + comparison.contact,y,30f,1)
+        for (metric in comparison.rows) y = line("${metric.label}: ${metric.self} / ${metric.other}",y,30f,1)
+    }
     if (tile.note.isNotEmpty()) line(tile.note,y,30f,3)
     val dir = File(context.cacheDir,"cards").apply { mkdirs() }
     dir.listFiles()?.filter { System.currentTimeMillis()-it.lastModified() > 86400000 }?.forEach { it.delete() }
