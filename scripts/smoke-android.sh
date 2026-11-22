@@ -34,17 +34,10 @@ PYTHON
 }
 adb push /tmp/the-max-ejemplo.txt /sdcard/Download/the-max-ejemplo.txt
 adb shell am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d file:///sdcard/Download/the-max-ejemplo.txt
-tap_text 'Importar mi chat'
-tap_text 'Show roots'
-model=$(adb shell getprop ro.product.model | tr -d '\r')
-contains 'Downloads'
-if grep -Fq "$model" /tmp/themax-ui.xml; then
-  tap_text "$model"
-  tap_text 'Download'
-else
-  tap_text 'Downloads'
-fi
-tap_text 'the-max-ejemplo.txt'
+# am constructs the test intent directly. The data URI carries Android's
+# temporary read grant; EXTRA_STREAM is the URI the receiving app reads.
+uri='content://com.android.externalstorage.documents/document/primary%3ADownload%2Fthe-max-ejemplo.txt'
+adb shell am start -W -a android.intent.action.SEND -t text/plain -d "$uri" --grant-read-uri-permission --eu android.intent.extra.STREAM "$uri" -n co.themax.chat/.MainActivity
 tap_text 'Ana'
 contains 'Compartir tarjeta'
 grep -Fq 'text="2"' /tmp/themax-ui.xml
