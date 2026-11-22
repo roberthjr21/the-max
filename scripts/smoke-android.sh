@@ -35,8 +35,13 @@ PYTHON
 adb push /tmp/the-max-ejemplo.txt /sdcard/Download/the-max-ejemplo.txt
 adb shell am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d file:///sdcard/Download/the-max-ejemplo.txt
 tap_text 'Importar mi chat'
-if ! contains 'the-max-ejemplo.txt'; then
-  adb shell input keyevent KEYCODE_MENU
+tap_text 'Show roots'
+model=$(adb shell getprop ro.product.model | tr -d '\r')
+contains 'Downloads'
+if grep -Fq "$model" /tmp/themax-ui.xml; then
+  tap_text "$model"
+  tap_text 'Download'
+else
   tap_text 'Downloads'
 fi
 tap_text 'the-max-ejemplo.txt'
