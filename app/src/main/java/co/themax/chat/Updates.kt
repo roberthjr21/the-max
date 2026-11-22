@@ -46,7 +46,7 @@ fun downloadUpdate(context: Context, update: Update): File {
         val archive = pm.getPackageArchiveInfo(staged.path, PackageManager.GET_SIGNATURES)
         val current = pm.getPackageInfo(context.packageName, PackageManager.GET_SIGNATURES)
         require(archive != null && archive.packageName == current.packageName && archive.versionCode == update.code &&
-            archive.signatures?.toSet() == current.signatures.toSet()) { "La firma o la versión del APK no coincide." }
+            !current.signatures.isNullOrEmpty() && archive.signatures?.toSet() == current.signatures?.toSet()) { "La firma o la versión del APK no coincide." }
         val target = File(directory, "verified-${update.code}.apk")
         check(staged.renameTo(target))
         return target
