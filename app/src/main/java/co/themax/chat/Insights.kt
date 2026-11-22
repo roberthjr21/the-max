@@ -74,16 +74,29 @@ fun insightCards(report: Report, self: String, other: String, label: String): Li
         else -> "«¿Qué fue lo mejor que te pasó esta semana?»"
     }
     val terms = if (maxOf(a.tokens,b.tokens) >= tokenLimit) " Primeras 24.000 palabras por persona." else ""
+    fun participation(person: PersonStats, sender: String): String {
+        if (report.counts.getValue(sender) < 5 || data.activeDays < 2) return "Muestra pequeña"
+        val signals = listOf(person.questions > 0, person.plans > 0, (report.starts[sender] ?: 0) > 0).count { it }
+        return listOf("Pocas señales", "Una señal", "Dos señales", "Tres señales")[signals]
+    }
+    val initiative = report.starts[self] ?: 0
+    val theirs = report.starts[other] ?: 0
+    val rhythm = when {
+        initiative + theirs < 3 -> "Aún hay pocos reinicios para describir su dinámica."
+        initiative == theirs -> "Los dos suelen retomar el contacto."
+        initiative > theirs -> "Tú retomas el contacto con más frecuencia."
+        else -> "$label retoma el contacto con más frecuencia."
+    }
     fun card(title: String, color: Long, value: String, note: String) = Tile(title,color,detail=value,note=note)
     return listOf(
-        card("Nivel de interés",0xffb8f2dc, "Tú hiciste ${a.questions} mensajes con preguntas y propusiste ${a.plans} posibles planes.\n$label: ${b.questions} con preguntas y ${b.plans} posibles planes.", "Señales de participación. Una conversación por sí sola no revela atracción."),
+        card("Nivel de interés",0xffb8f2dc, "Tú · ${participation(a,self)}\n$label · ${participation(b,other)}", "Indicador de participación: preguntar, sugerir planes y abrir conversaciones. Preguntas: ${a.questions} / ${b.questions}. Posibles planes: ${a.plans} / ${b.plans}. No mide atracción."),
         card("Mensaje más largo",0xffffe6ab, most.longest.ifEmpty { "Sin texto disponible" },
             "$author · ${most.longestLength} caracteres." + if (most.longestLength > 360) " Se muestra el comienzo." else ""),
         card("Red flags",0xffffbfd1, if (a.pressure+b.pressure == 0) "Ninguna coincidencia en las frases revisadas." else "Posible presión en ${a.pressure} mensajes tuyos y ${b.pressure} de $label.",
             "Busca expresiones concretas como «si me quisieras». Una cita o una broma también pueden coincidir."),
         card("Lo que notamos",0xffc7dbfa, "Hubo ${a.turns+b.turns} turnos en ${data.activeDays} días con mensajes.", "Varios mensajes seguidos de la misma persona cuentan como un turno."),
         card("Palabras top",0xfffbd4bc, "Tú: ${top(a)}\n\n$label: ${top(b)}", "Frecuencias individuales, sin palabras comunes.$terms"),
-        card("Estilo de apego",0xffe1cef8, "Tú retomaste ${report.starts[self] ?: 0} conversaciones; $label, ${report.starts[other] ?: 0}.",
+        card("Estilo de apego",0xffe1cef8, "$rhythm Inicios: $initiative tuyos y $theirs de $label.",
             "Describe la iniciativa en este chat. Para conocer el apego hacen falta más contexto y la perspectiva de cada persona."),
         card("Cómo fue el chat",0xffffe7b5, "${data.days} días entre el primer y último día, contando ambos. Se escribieron en ${data.activeDays}.", "El resumen cubre únicamente el período exportado."),
         card("¿Te dejó en visto?",0xffffc7dc, "$label volvió a responder tras 8 horas o más en ${b.longPauses} cambios de turno.",

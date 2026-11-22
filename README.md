@@ -1,10 +1,14 @@
 # The Max para Android
 
-Importa un chat individual de WhatsApp y explora seis tarjetas sobre la conversación. El análisis funciona en el teléfono. La vista de ejemplo permite conocer la app antes de abrir un archivo personal.
+Importa un chat individual de WhatsApp y explora las tarjetas sobre la conversación. El análisis funciona en el teléfono. La vista de ejemplo permite conocer la app antes de abrir un archivo personal.
 
-**[Descargar The Max 1.0.0 para Android](https://raw.githubusercontent.com/roberthjr21/the-max/main/downloads/The-Max-1.apk)** · Android 8 o superior.
+**[Descargar The Max para Android](https://github.com/roberthjr21/the-max/releases/latest/download/The-Max.apk)** · Android 8 o superior.
 
 En WhatsApp abre el chat, selecciona **Más → Exportar chat → Sin archivos multimedia** y compártelo con The Max. También puedes usar **Importar mi chat** con un TXT o ZIP. El formato de fecha previsto es día/mes/año. El límite es 16 MB de texto. Al compartir la tarjeta de primer mensaje, su texto queda visible en la imagen.
+
+## Tarjetas de conversación
+
+La versión 1.1 incorpora palabras por participante, el mensaje más largo, expresiones compartidas, actividad, posibles frases de presión y sugerencias para responder. El nivel de interés describe tres señales observables de participación. El informe indica qué puede medirse en una exportación y qué requiere preguntarle a la otra persona. El cálculo funciona en el dispositivo, sin servicios de IA.
 
 ## Desarrollo
 
