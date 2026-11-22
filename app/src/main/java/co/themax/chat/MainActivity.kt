@@ -112,14 +112,14 @@ class MainActivity : ComponentActivity() {
             Text(buildAnnotatedString {
                 append("Tú & "); withStyle(SpanStyle(color = Color(0xff349dd2))) { append(label) }
             }, Modifier.fillMaxWidth(), fontSize = 32.sp, lineHeight = 36.sp, fontWeight = FontWeight.Black, color = ink)
-            val cards = listOf(
+            val cards = remember(report, self, label) { listOf(
                 Tile("Mensajes",0xffa5f3db,"tú" to report.counts.getValue(self).toString(),label to report.counts.getValue(other).toString()),
                 Tile("Tiempo medio de respuesta",0xffd4befb,"tú" to delayText(report.delays[self]),label to delayText(report.delays[other]),note="Tiempo entre turnos, con pausas menores a 8 horas."),
                 Tile("Quién rompe el silencio",0xffffb6cf,"tú" to (report.starts[self] ?: 0).toString(),label to (report.starts[other] ?: 0).toString(),note="Cuenta el inicio del chat y las pausas de 8 horas o más."),
                 Tile("Primer mensaje",0xffffe8a6,detail=report.first.body.trim().take(200),note=if (report.first.sender == self) "Lo enviaste tú" else "Lo envió $label"),
                 Tile("Su día más activo",0xffffd8c3,detail=report.peak),
                 Tile("Palabras favoritas",0xffbce5fb,detail=report.words.joinToString(" · ").ifEmpty { "Sin palabras frecuentes" },note=report.emoji?.let { "Emoji más usado: $it" } ?: "")
-            )
+            ) + insightCards(report,self,other,label) }
             cards.forEachIndexed { i, tile ->
                 TileView(tile, if (i == 0) ({
                     if (result == null) picker.launch(arrayOf("text/plain","application/zip","application/x-zip-compressed","application/octet-stream"))

@@ -20,21 +20,26 @@ cat > /tmp/the-max-ejemplo.txt <<'CHAT'
 22/11/26, 09:02 - Sol: ¡Hola!
 22/11/26, 09:08 - Ana: Me encanta el café
 CHAT
-adb shell content insert --uri content://media/external/downloads --bind _display_name:s:the-max-ejemplo.txt --bind mime_type:s:text/plain
-id=$(adb shell content query --uri content://media/external/downloads --projection _id:_display_name | sed -nE 's/.*_id=([0-9]+), _display_name=the-max-ejemplo.txt.*/\1/p' | tail -1)
-test -n "$id"
-uri="content://media/external/downloads/$id"
-adb shell content write --uri "$uri" < /tmp/the-max-ejemplo.txt
-adb shell am start -W -a android.intent.action.SEND -t text/plain --grant-read-uri-permission --eu android.intent.extra.STREAM "$uri" -n co.themax.chat/.MainActivity
-contains '¿Cuál de los dos eres tú?'
-read -r x y < <(python3 - <<'PY'
-import re, xml.etree.ElementTree as ET
-node=next(n for n in ET.parse('/tmp/themax-ui.xml').iter('node') if n.get('text')=='Ana')
+tap_text() {
+  contains "$1"
+  read -r x y < <(python3 - "$1" <<'PYTHON'
+import re,sys,xml.etree.ElementTree as ET
+node=next(n for n in ET.parse('/tmp/themax-ui.xml').iter('node') if n.get('text')==sys.argv[1] or n.get('content-desc')==sys.argv[1])
 x1,y1,x2,y2=map(int,re.findall(r'\d+',node.get('bounds')))
 print((x1+x2)//2,(y1+y2)//2)
-PY
+PYTHON
 )
-adb shell input tap "$x" "$y"
+  adb shell input tap "$x" "$y"
+}
+adb push /tmp/the-max-ejemplo.txt /sdcard/Download/the-max-ejemplo.txt
+adb shell am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d file:///sdcard/Download/the-max-ejemplo.txt
+tap_text 'Importar mi chat'
+if ! contains 'the-max-ejemplo.txt'; then
+  adb shell input keyevent KEYCODE_MENU
+  tap_text 'Downloads'
+fi
+tap_text 'the-max-ejemplo.txt'
+tap_text 'Ana'
 contains 'Compartir tarjeta'
 grep -Fq 'text="2"' /tmp/themax-ui.xml
 grep -Fq 'text="1"' /tmp/themax-ui.xml

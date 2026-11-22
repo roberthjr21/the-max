@@ -24,6 +24,24 @@ segunda línea
         ZipOutputStream(out).use { it.putNextEntry(ZipEntry("_chat.txt")); it.write(text.toByteArray()) }
         assertEquals(text,readExport(out.toByteArray().inputStream()))
     }
+    @Test fun insightsKeepEachSpeakersWordsAndEvidenceSeparate() {
+        val chat = """21/11/26, 09:00 - Ana: luna azul luna azul
+21/11/26, 09:05 - Sol: luna azul ¿vamos por café?
+21/11/26, 19:05 - Ana: ahora no puedo"""
+        val report = analyze(chat)
+        val ana = report.insights.people.getValue("Ana")
+        val sol = report.insights.people.getValue("Sol")
+        assertEquals(2,ana.words["luna"])
+        assertEquals(1,sol.words["luna"])
+        assertEquals(1,sol.questions)
+        assertEquals(1,sol.plans)
+        assertEquals(1,ana.longPauses)
+        assertEquals(0,sol.longPauses)
+        val cards = insightCards(report,"Sol","Ana","Otra persona")
+        assertEquals(11,cards.size)
+        assertTrue(cards.last().detail.contains("luna azul"))
+        assertTrue(cards.first { it.title == "Mensaje más largo" }.detail.contains("café"))
+    }
     @Test fun thirtyMessages() {
         val chat = (1..30).joinToString("\n") { "21/11/26, 09:%02d - %s: hola".format(it,if (it%2==0) "Ana" else "Sol") }
         assertEquals(mapOf("Ana" to 15,"Sol" to 15),analyze(chat).counts)
