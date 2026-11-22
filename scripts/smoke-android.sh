@@ -1,7 +1,8 @@
 #!/bin/bash
 set -eu
 code=$(jq -r .versionCode downloads/latest.json)
-adb install "downloads/The-Max-${code}.apk"
+if [ "$code" -gt 1 ]; then adb install downloads/The-Max-1.apk; fi
+adb install -r "downloads/The-Max-${code}.apk"
 adb shell am start -W -n co.themax.chat/.MainActivity
 contains() {
   for attempt in {1..10}; do
@@ -43,3 +44,18 @@ tap_text 'Ana'
 contains 'Compartir tarjeta'
 grep -Fq 'text="2"' /tmp/themax-ui.xml
 grep -Fq 'text="1"' /tmp/themax-ui.xml
+
+if [ "$code" -ge 2 ]; then
+  size=$(adb shell wm size | tail -1 | awk '{print $NF}' | tr -d '\r')
+  width=${size%x*}
+  height=${size#*x}
+  for page in {1..30}; do
+    adb shell input swipe "$((width/2))" "$((height*3/4))" "$((width/2))" "$((height/3))" 500
+    adb shell uiautomator dump /sdcard/themax-ui.xml >/dev/null
+    adb exec-out cat /sdcard/themax-ui.xml >> /tmp/themax-scroll.xml
+    if grep -Fq 'Solo ustedes dos dicen esto' /tmp/themax-scroll.xml; then break; fi
+  done
+  for title in 'Nivel de interés' 'Mensaje más largo' 'Red flags' 'Lo que notamos' 'Palabras top' 'Estilo de apego' 'Cómo fue el chat' '¿Te dejó en visto?' 'The Move' 'Lo que podría querer decirte' 'Solo ustedes dos dicen esto'; do
+    grep -Fq "$title" /tmp/themax-scroll.xml
+  done
+fi
