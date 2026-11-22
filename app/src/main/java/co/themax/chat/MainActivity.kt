@@ -116,11 +116,21 @@ class MainActivity : ComponentActivity() {
                 Tile("Mensajes",0xffa5f3db,"tú" to report.counts.getValue(self).toString(),label to report.counts.getValue(other).toString()),
                 Tile("Tiempo medio de respuesta",0xffd4befb,"tú" to delayText(report.delays[self]),label to delayText(report.delays[other]),note="Tiempo entre turnos, con pausas menores a 8 horas."),
                 Tile("Quién rompe el silencio",0xffffb6cf,"tú" to (report.starts[self] ?: 0).toString(),label to (report.starts[other] ?: 0).toString(),note="Cuenta el inicio del chat y las pausas de 8 horas o más."),
-                Tile("Primer mensaje",0xffffe8a6,detail=report.first.body.trim().take(200),note=if (report.first.sender == self) "Lo enviaste tú" else "Lo envió $label"),
+                Tile("Primer mensaje",0xffffe8a6,
+                    detail=report.first?.body?.take(400) ?: "Este archivo no contiene mensajes con texto visible.",
+                    note=report.first?.let { msg -> (if (msg.sender == self) "Tú" else label) + " · " + msg.time.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy · HH:mm")) + " · Primer texto disponible" }.orEmpty()),
                 Tile("Su día más activo",0xffffd8c3,detail=report.peak),
                 Tile("Palabras favoritas",0xffbce5fb,detail=report.words.joinToString(" · ").ifEmpty { "Sin palabras frecuentes" },note=report.emoji?.let { "Emoji más usado: $it" } ?: "")
             ) + insightCards(report,self,other,label) }
+            var section by rememberSaveable { mutableStateOf("Todo") }
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("Todo", "Resumen", "Señales").forEach { name ->
+                    FilterChip(selected = section == name, onClick = { section = name }, label = { Text(name) })
+                }
+            }
+            if (section == "Señales" && result == null) OutlinedButton(onClick = { picker.launch(arrayOf("*/*")) }) { Text("Importar mi chat") }
             cards.forEachIndexed { i, tile ->
+                if ((section == "Resumen" && i >= 6) || (section == "Señales" && i < 6)) return@forEachIndexed
                 TileView(tile, if (i == 0) ({
                     if (result == null) picker.launch(arrayOf("text/plain","application/zip","application/x-zip-compressed","application/octet-stream"))
                     else work { shareCard(this@MainActivity,tile) }
@@ -174,8 +184,8 @@ private fun TileView(tile: Tile, action: (() -> Unit)?, actionLabel: String, sha
                     Text(item.second,fontWeight = FontWeight.Black,fontSize = 34.sp,lineHeight = 38.sp,color = ink)
                 }
             }
-        } else Text(tile.detail,fontWeight = FontWeight.Bold,fontSize = 23.sp,color = ink)
-        if (tile.note.isNotEmpty()) Text(tile.note,color = ink,fontSize = 13.sp)
+        } else Text(tile.detail,fontWeight = FontWeight.SemiBold,fontSize = 20.sp,lineHeight = 27.sp,color = ink)
+        if (tile.note.isNotEmpty()) { HorizontalDivider(color = ink.copy(alpha = .15f)); Text(tile.note,color = ink,fontSize = 14.sp,lineHeight = 20.sp) }
         if (action != null) Button(onClick = action,modifier = Modifier.fillMaxWidth()) { Text(actionLabel) }
         if (share != null) TextButton(onClick = share) { Text("Compartir tarjeta",color = ink) }
     }

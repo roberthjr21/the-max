@@ -7,6 +7,7 @@ data class PersonStats(
     var questions: Int = 0, var turns: Int = 0, var longPauses: Int = 0,
     var plans: Int = 0, var availability: Int = 0, var pressure: Int = 0,
     var longest: String = "", var longestLength: Int = 0, var tokens: Int = 0,
+    val flagTypes: MutableMap<String, Int> = linkedMapOf(),
     val words: MutableMap<String, Int> = mutableMapOf(),
     val phrases: MutableMap<String, Int> = mutableMapOf()
 )
@@ -17,8 +18,6 @@ private val word = Regex("""[\p{L}]+""")
 private val ignored = setOf("que","por","para","con","las","los","una","del","pero","como","más","ese","esa","esto","está","muy","hay","son","eso","mis","sus","soy","era","sin","pues","porque","también")
 private val plans = Regex("""\b(vamos (?:a|por)|salgamos|nos vemos|te invito|quieres salir)\b""")
 private val availability = Regex("""\b(te aviso|te escribo luego|hablamos luego|ahora no puedo)\b""")
-private val pressure = Regex("""\b(si me quisieras|dame tu contraseña|no te dejo (?:ir|salir)|me las vas a pagar)\b""")
-private val placeholder = Regex("""(?i)^(?:<?(?:multimedia omitido|media omitted)>?|se eliminó este mensaje\.?|eliminaste este mensaje\.?)$""")
 private const val tokenLimit = 24000
 
 fun collectInsights(rows: List<Message>): Insights {
@@ -29,15 +28,16 @@ fun collectInsights(rows: List<Message>): Insights {
         if (previous?.sender != message.sender) p.turns++
         if (previous != null && previous.sender != message.sender &&
             Duration.between(previous.time, message.time).toHours() >= 8) p.longPauses++
-        val body = message.body.trim()
-        if (body.isEmpty() || placeholder.matches(body)) continue
+        val body = visibleBody(message.body) ?: continue
         val length = body.codePointCount(0, body.length)
         if (length > p.longestLength) { p.longestLength = length; p.longest = body.take(360) }
         if ('?' in body || '¿' in body) p.questions++
         val lower = body.lowercase(Locale.ROOT)
         if (plans.containsMatchIn(lower)) p.plans++
         if (availability.containsMatchIn(lower)) p.availability++
-        if (pressure.containsMatchIn(lower)) p.pressure++
+        val reasons = flagReasons(body)
+        if (reasons.isNotEmpty()) p.pressure++
+        for (reason in reasons) p.flagTypes.merge(reason, 1, Int::plus)
         var prev = ""
         for (match in word.findAll(lower)) {
             if (p.tokens >= tokenLimit) break
@@ -92,8 +92,12 @@ fun insightCards(report: Report, self: String, other: String, label: String): Li
         card("Nivel de interés",0xffb8f2dc, "Tú · ${participation(a,self)}\n$label · ${participation(b,other)}", "Indicador de participación: preguntar, sugerir planes y abrir conversaciones. Preguntas: ${a.questions} / ${b.questions}. Posibles planes: ${a.plans} / ${b.plans}. No mide atracción."),
         card("Mensaje más largo",0xffffe6ab, most.longest.ifEmpty { "Sin texto disponible" },
             "$author · ${most.longestLength} caracteres." + if (most.longestLength > 360) " Se muestra el comienzo." else ""),
-        card("Red flags",0xffffbfd1, if (a.pressure+b.pressure == 0) "Ninguna coincidencia en las frases revisadas." else "Posible presión en ${a.pressure} mensajes tuyos y ${b.pressure} de $label.",
-            "Busca expresiones concretas como «si me quisieras». Una cita o una broma también pueden coincidir."),
+        card("Red flags",0xffffbfd1,
+            if (a.pressure + b.pressure == 0) "Sin coincidencias en las categorías revisadas"
+            else listOf("Tú" to a, label to b).joinToString("\n\n") { (name, person) ->
+                val breakdown = person.flagTypes.entries.joinToString(" · ") { "${it.key}: ${it.value}" }
+                "$name · ${person.pressure} mensajes" + if (breakdown.isEmpty()) "" else "\n$breakdown"
+            }, "Se revisan amenazas, control, presión emocional y peticiones de contraseñas. Un mensaje puede aparecer en varias categorías. Lee el contexto antes de sacar conclusiones."),
         card("Lo que notamos",0xffc7dbfa, "Hubo ${a.turns+b.turns} turnos en ${data.activeDays} días con mensajes.", "Varios mensajes seguidos de la misma persona cuentan como un turno."),
         card("Palabras top",0xfffbd4bc, "Tú: ${top(a)}\n\n$label: ${top(b)}", "Frecuencias individuales, sin palabras comunes.$terms"),
         card("Estilo de apego",0xffe1cef8, "$rhythm Inicios: $initiative tuyos y $theirs de $label.",

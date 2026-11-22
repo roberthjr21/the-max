@@ -7,7 +7,7 @@ import java.util.zip.ZipInputStream
 
 data class Message(val time: LocalDateTime, val sender: String, val body: String)
 data class Report(val names: List<String>, val counts: Map<String, Int>, val delays: Map<String, Long>,
-    val starts: Map<String, Int>, val first: Message, val peak: String, val words: List<String>, val emoji: String?, val insights: Insights)
+    val starts: Map<String, Int>, val first: Message?, val peak: String, val words: List<String>, val emoji: String?, val insights: Insights)
 
 private val header = Regex("""^\[?(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4}),?\s+(\d{1,2}):(\d{2})(?::\d{2})?\s*([ap]\.?\s*m\.?)?\]?\s*(?:-\s+)?(.+)$""", RegexOption.IGNORE_CASE)
 private const val limit = 16 * 1024 * 1024
@@ -84,6 +84,6 @@ fun analyze(text: String): Report {
     val emojiPattern = Regex("""[\x{1F1E6}-\x{1F1FF}]{2}|$emojiUnit(?:\u200D$emojiUnit)*""")
     val emoji = rows.asSequence().flatMap { emojiPattern.findAll(it.body).map { m -> m.value } }
         .groupingBy { it }.eachCount().maxByOrNull { it.value }?.key
-    return Report(counts.keys.toList(), counts, delays.mapValues { it.value.average().toLong() }, starts, rows.first(),
+    return Report(counts.keys.toList(), counts, delays.mapValues { it.value.average().toLong() }, starts, rows.firstNotNullOfOrNull { row -> visibleBody(row.body)?.let { row.copy(body = it) } },
         "${peak.key.dayOfMonth}/${peak.key.monthValue}/${peak.key.year} · ${peak.value} mensajes", words, emoji, collectInsights(rows))
 }

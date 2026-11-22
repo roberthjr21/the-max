@@ -17,7 +17,7 @@ segunda línea
         assertEquals(mapOf("Ana" to 2,"Sol" to 2),report.counts)
         assertEquals(3L,report.delays["Sol"])
         assertEquals(mapOf("Ana" to 1,"Sol" to 1),report.starts)
-        assertEquals("Hola\nsegunda línea",report.first.body)
+        assertEquals("Hola\nsegunda línea",report.first?.body)
     }
     @Test fun zippedChat() {
         val out = ByteArrayOutputStream()
@@ -41,6 +41,21 @@ segunda línea
         assertEquals(11,cards.size)
         assertTrue(cards.last().detail.contains("luna azul"))
         assertTrue(cards.first { it.title == "Mensaje más largo" }.detail.contains("café"))
+    }
+    @Test fun invisibleAndDeletedEntriesDoNotHideTheFirstText() {
+        val prefix = "21/11/26, 09:00 - Ana: \u200b\n21/11/26, 09:01 - Sol: <Multimedia omitido>"
+        assertNull(analyze(prefix).first)
+        val report = analyze(prefix + "\n21/11/26, 09:03 - Sol: 👋")
+        assertEquals("👋",report.first?.body)
+        assertEquals("Sol",report.first?.sender)
+        assertEquals(3,report.counts.values.sum())
+    }
+    @Test fun categoriesRespectCaseAccentsAndQuotedWarnings() {
+        assertEquals(listOf("Invasión de privacidad"),flagReasons("¡PÁSAME tu contraseña!"))
+        assertTrue(flagReasons("Me dijo: «dame tu contraseña»").isEmpty())
+        assertTrue(flagReasons("No digas dame tu contraseña").isEmpty())
+        assertTrue(flagReasons("¿Me pasas la clave del wifi?").isEmpty())
+        assertEquals(2,flagReasons("Te prohíbo salir. Me las vas a pagar.").size)
     }
     @Test fun thirtyMessages() {
         val chat = (1..30).joinToString("\n") { "21/11/26, 09:%02d - %s: hola".format(it,if (it%2==0) "Ana" else "Sol") }
