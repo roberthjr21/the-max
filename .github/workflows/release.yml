@@ -1,0 +1,27 @@
+name: Publicar APK firmado
+on:
+  push:
+    branches: [main]
+    paths: ['downloads/latest.json']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verificar el APK y crear la descarga
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          code=$(jq -r .versionCode downloads/latest.json)
+          name=$(jq -r .versionName downloads/latest.json)
+          hash=$(jq -r .sha256 downloads/latest.json)
+          apk="downloads/The-Max-${code}.apk"
+          echo "$hash  $apk" | sha256sum --check
+          cp "$apk" The-Max.apk
+          if ! gh release view "v$name" >/dev/null 2>&1; then
+            gh release create "v$name" The-Max.apk --target "$GITHUB_SHA" --title "The Max $name" --notes "APK firmado para Android. Instálalo o actualiza desde The Max."
+          fi
