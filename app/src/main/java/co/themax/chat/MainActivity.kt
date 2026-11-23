@@ -170,7 +170,7 @@ private fun delayText(n: Long?) = when (n) { null -> "Sin datos"; 0L -> "<1 min"
 data class Metric(val label: String, val self: Int, val other: Int)
 data class Comparison(val contact: String, val rows: List<Metric>)
 data class Tile(val title: String,val tint: Long,val left: Pair<String,String>? = null,val right: Pair<String,String>? = null,
-    val detail: String = "",val note: String = "", val comparison: Comparison? = null, val examples: List<String> = emptyList())
+    val detail: String = "",val note: String = "", val comparison: Comparison? = null, val readings: List<String> = emptyList())
 
 @Composable
 private fun TileView(tile: Tile, action: (() -> Unit)?, actionLabel: String, share: (() -> Unit)?) {
@@ -205,12 +205,16 @@ private fun TileView(tile: Tile, action: (() -> Unit)?, actionLabel: String, sha
                 }
             }
         }
-        if (tile.examples.isNotEmpty()) {
+        if (tile.readings.isNotEmpty()) {
             var open by remember(tile) { mutableStateOf(false) }
-            OutlinedButton(onClick={ open = !open }) { Text(if (open) "Ocultar ejemplos" else "Ver ejemplos del chat") }
-            if (open) {
-                Text("Primer ejemplo de cada categoría por persona. Solo aparece en esta pantalla.",color=ink,fontSize=13.sp)
-                tile.examples.forEach { Text(it,color=ink,fontSize=15.sp,lineHeight=21.sp) }
+            OutlinedButton(onClick = { open = !open }) {
+                Text(if (open) "Ocultar el detalle" else "Ver cómo se calculó")
+            }
+            if (open) Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                tile.readings.forEach { reading ->
+                    Text(reading, Modifier.fillMaxWidth().background(Color.White.copy(alpha = .65f),
+                        RoundedCornerShape(14.dp)).padding(12.dp), color = ink, fontSize = 15.sp, lineHeight = 21.sp)
+                }
             }
         }
         if (tile.note.isNotEmpty()) { HorizontalDivider(color = ink.copy(alpha = .15f)); Text(tile.note,color = ink,fontSize = 14.sp,lineHeight = 20.sp) }

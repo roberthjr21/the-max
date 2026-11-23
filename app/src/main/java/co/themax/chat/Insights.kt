@@ -7,13 +7,11 @@ data class PersonStats(
     var questions: Int = 0, var turns: Int = 0, var longPauses: Int = 0,
     var plans: Int = 0, var availability: Int = 0, var pressure: Int = 0,
     var longest: String = "", var longestLength: Int = 0, var tokens: Int = 0,
-    val examples: MutableMap<String, String> = linkedMapOf(),
-    val flagTypes: MutableMap<String, Int> = linkedMapOf(),
     val words: MutableMap<String, Int> = mutableMapOf(),
     val phrases: MutableMap<String, Int> = mutableMapOf()
 )
 
-data class Insights(val people: Map<String, PersonStats>, val days: Long, val activeDays: Int)
+data class Insights(val people: Map<String, PersonStats>, val days: Long, val activeDays: Int, val flags: FlagReport)
 
 private val word = Regex("""[\p{L}]+""")
 private val ignored = setOf("que","por","para","con","las","los","una","del","pero","como","más","ese","esa","esto","está","muy","hay","son","eso","mis","sus","soy","era","sin","pues","porque","también")
@@ -38,14 +36,6 @@ fun collectInsights(rows: List<Message>): Insights {
         if (availability.containsMatchIn(lower)) p.availability++
         val reasons = flagReasons(body)
         if (reasons.isNotEmpty()) p.pressure++
-        for (reason in reasons) {
-            p.flagTypes.merge(reason, 1, Int::plus)
-            if (reason !in p.examples) {
-                val date = message.time.toLocalDate()
-                val excerpt = body.take(240) + if (body.length > 240) "…" else ""
-                p.examples[reason] = "${date.dayOfMonth}/${date.monthValue}/${date.year} · «$excerpt»"
-            }
-        }
         var prev = ""
         for (match in word.findAll(lower)) {
             if (p.tokens >= tokenLimit) break
@@ -58,7 +48,7 @@ fun collectInsights(rows: List<Message>): Insights {
         }
     }
     val days = rows.map { it.time.toLocalDate() }.toSet()
-    return Insights(people, Duration.between(days.min().atStartOfDay(), days.max().atStartOfDay()).toDays()+1, days.size)
+    return Insights(people, Duration.between(days.min().atStartOfDay(), days.max().atStartOfDay()).toDays()+1, days.size, analyzeFlags(rows))
 }
 
 private fun top(p: PersonStats) = p.words.entries.sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key })
@@ -105,19 +95,7 @@ fun insightCards(report: Report, self: String, other: String, label: String): Li
             ))),
         card("Mensaje más largo",0xffffe6ab, most.longest.ifEmpty { "Sin texto disponible" },
             "$author · ${most.longestLength} caracteres." + if (most.longestLength > 360) " Se muestra el comienzo." else ""),
-        Tile("Red flags",0xffffbfd1,
-            detail=when (val total = a.pressure + b.pressure) {
-                0 -> "No encontramos frases que coincidan con los patrones revisados."
-                1 -> "Hay un mensaje que vale la pena leer con contexto."
-                else -> "Hay $total mensajes que vale la pena leer con contexto."
-            }, note="Buscamos expresiones de amenaza, control, presión o acceso a cuentas. Una frase puede tener varios motivos. El tono y la historia entre ustedes también importan.",
-            comparison = if (a.pressure+b.pressure == 0) null else Comparison(label,
-                (a.flagTypes.keys + b.flagTypes.keys).sorted().map { reason ->
-                    Metric(reason,a.flagTypes[reason] ?: 0,b.flagTypes[reason] ?: 0)
-                }),
-            examples = listOf("Tú" to a, label to b).flatMap { (name, person) ->
-                person.examples.map { (reason, excerpt) -> "$name · $reason\n$excerpt" }
-            }),
+        data.flags.tile(self, label),
         card("Cuántas veces cambiaron de turno",0xffc7dbfa, "La conversación pasó de una persona a otra ${a.turns+b.turns-1} veces.", "Varios mensajes seguidos de la misma persona cuentan como un turno."),
         card("Palabras top",0xfffbd4bc, "Tú: ${top(a)}\n\n$label: ${top(b)}", "Frecuencias individuales, sin palabras comunes.$terms"),
         card("Quién suele dar el primer paso",0xffe1cef8, "$rhythm Inicios: $initiative tuyos y $theirs de $label.",
