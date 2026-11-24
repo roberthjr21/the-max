@@ -1,0 +1,8 @@
+<resources>
+    <style name="TheMaxBase" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowBackground">#FAFAF7</item>
+    </style>
+    <style name="TheMaxTheme" parent="TheMaxBase" />
+    <color name="icon_green">#17AB64</color>
+</resources>
