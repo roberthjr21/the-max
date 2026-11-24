@@ -5,7 +5,7 @@ import java.util.Locale
 
 data class PersonStats(
     var questions: Int = 0, var turns: Int = 0, var longPauses: Int = 0,
-    var plans: Int = 0, var availability: Int = 0, var pressure: Int = 0,
+    var plans: Int = 0, var availability: Int = 0,
     var longest: String = "", var longestLength: Int = 0, var tokens: Int = 0,
     val words: MutableMap<String, Int> = mutableMapOf(),
     val phrases: MutableMap<String, Int> = mutableMapOf()
@@ -13,13 +13,11 @@ data class PersonStats(
 
 data class Insights(val people: Map<String, PersonStats>, val days: Long, val activeDays: Int, val flags: FlagReport, val interest: InterestDays)
 
-private val word = Regex("""[\p{L}]+""")
-private val ignored = setOf("que","por","para","con","las","los","una","del","pero","como","más","ese","esa","esto","está","muy","hay","son","eso","mis","sus","soy","era","sin","pues","porque","también")
 private val plans = Regex("""\b(vamos (?:a|por)|salgamos|nos vemos|te invito|quieres salir)\b""")
 private val availability = Regex("""\b(te aviso|te escribo luego|hablamos luego|ahora no puedo)\b""")
 private const val tokenLimit = 24000
 
-fun collectInsights(rows: List<Message>): Insights {
+fun collectPeople(rows: List<Message>): Map<String, PersonStats> {
     val people = rows.map { it.sender }.distinct().associateWith { PersonStats() }
     for ((index, message) in rows.withIndex()) {
         val p = people.getValue(message.sender)
@@ -31,15 +29,12 @@ fun collectInsights(rows: List<Message>): Insights {
         val length = body.codePointCount(0, body.length)
         if (length > p.longestLength) { p.longestLength = length; p.longest = body.take(360) }
         if ('?' in body || '¿' in body) p.questions++
-        val lower = body.lowercase(Locale.ROOT)
+        val lower = message.normalized
         if (plans.containsMatchIn(lower)) p.plans++
         if (availability.containsMatchIn(lower)) p.availability++
-        val reasons = flagReasons(body)
-        if (reasons.isNotEmpty()) p.pressure++
         var prev = ""
-        for (match in word.findAll(lower)) {
+        for (token in wordTokens(lower)) {
             if (p.tokens >= tokenLimit) break
-            val token = match.value
             p.tokens++
             if (token.length in 3..40 && token !in ignored) p.words.merge(token, 1, Int::plus)
             if (prev.isNotEmpty() && token.length <= 40 && (prev !in ignored || token !in ignored) &&
@@ -47,8 +42,7 @@ fun collectInsights(rows: List<Message>): Insights {
             prev = token.takeIf { it.length <= 40 }.orEmpty()
         }
     }
-    val days = rows.map { it.time.toLocalDate() }.toSet()
-    return Insights(people, Duration.between(days.min().atStartOfDay(), days.max().atStartOfDay()).toDays()+1, days.size, analyzeFlags(rows), interestDays(rows))
+    return people
 }
 
 private fun top(p: PersonStats) = p.words.entries.sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key })
@@ -65,7 +59,7 @@ fun insightCards(report: Report, self: String, other: String, label: String): Li
     val most = if (a.longestLength >= b.longestLength) a else b
     val author = if (most === a) "Tú" else label
     val suggest = when {
-        b.pressure > 0 -> "Si algo te incomodó, puedes decir: «Eso no me hizo sentir bien. ¿Podemos hablarlo?»"
+        other in data.flags.flaggedSenders -> "Si algo te incomodó, puedes decir: «Eso no me hizo sentir bien. ¿Podemos hablarlo?»"
         b.availability > 0 -> "«Dale, cuando tengas un rato me cuentas 😊»"
         b.plans > 0 -> "«Me suena ese plan. ¿Qué día te queda bien?»"
         b.questions > 0 -> "Retoma una pregunta suya y cuéntale algo tuyo antes de preguntarle por su día."

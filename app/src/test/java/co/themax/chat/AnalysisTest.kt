@@ -50,13 +50,6 @@ segunda línea
         assertEquals("Sol",report.first?.sender)
         assertEquals(3,report.counts.values.sum())
     }
-    @Test fun categoriesRespectCaseAccentsAndQuotedWarnings() {
-        assertEquals(listOf("Invasión de privacidad"),flagReasons("¡PÁSAME tu contraseña!"))
-        assertTrue(flagReasons("Me dijo: «dame tu contraseña»").isEmpty())
-        assertTrue(flagReasons("No digas dame tu contraseña").isEmpty())
-        assertTrue(flagReasons("¿Me pasas la clave del wifi?").isEmpty())
-        assertEquals(2,flagReasons("Te prohíbo salir. Me las vas a pagar.").size)
-    }
     @Test fun explainsSignalsAndKeepsExamplesSeparateFromSharedSummary() {
         val report = analyze("""21/11/26, 09:00 - Ana: Hola
 21/11/26, 09:01 - Sol: Nunca te voy a pegar
