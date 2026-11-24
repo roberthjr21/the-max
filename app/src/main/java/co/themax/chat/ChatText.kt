@@ -3,7 +3,7 @@ package co.themax.chat
 import java.text.Normalizer
 import java.util.Locale
 
-private val invisible = Regex("""[\p{Cf}\p{Z}\s\uFE0E\uFE0F]""")
+private val invisible = Regex("""[\p{Cf}\p{Z}\s\uFE0E\uFE0F]+""")
 private val marker = Regex("""(?i)^(?:<[^>]*(?:omitid[oa]|omitted)>|(?:imagen|foto|video|vídeo|audio|sticker|documento|multimedia|gif|media) (?:omitid[oa]|omitted)|(?:se eliminó este mensaje|eliminaste este mensaje|this message was deleted)\.?)$""")
 
 fun visibleBody(raw: String): String? {
