@@ -1,7 +1,7 @@
 #!/bin/bash
 set -eu
 code=$(jq -r .versionCode downloads/latest.json)
-if [ "$code" -gt 1 ]; then adb install downloads/The-Max-1.apk; fi
+if [ "$code" -gt 1 ]; then adb install "downloads/The-Max-$((code - 1)).apk"; fi
 adb install -r "downloads/The-Max-${code}.apk"
 adb shell am start -W -n co.themax.chat/.MainActivity
 contains() {
@@ -27,6 +27,11 @@ PYTHON
 )
   adb shell input tap "$x" "$y"
 }
+if [ "$code" -ge 6 ]; then
+  tap_text 'Ajustes de IA'
+  contains 'OpenAI'
+  tap_text 'Cancelar'
+fi
 bash scripts/test-sender/run.sh
 tap_text 'Ana'
 contains 'Compartir tarjeta'
