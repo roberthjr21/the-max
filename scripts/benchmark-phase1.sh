@@ -18,10 +18,11 @@ cat > "$work/classpath.gradle" <<'GRADLE'
 gradle.projectsEvaluated {
     def app = gradle.rootProject.project(':app')
     app.tasks.register('benchmarkClasspath') {
-        dependsOn app.tasks.named('compileDebugUnitTestKotlin')
+        dependsOn app.tasks.named('compileDebugUnitTestKotlin'), app.tasks.named('compileDebugKotlin')
         doLast {
             def tests = app.tasks.named('testDebugUnitTest').get()
-            new File(System.getenv('BENCH_CP')).text = tests.classpath.asPath
+            def kotlinMain = app.tasks.named('compileDebugKotlin').get().destinationDirectory
+            new File(System.getenv('BENCH_CP')).text = app.files(kotlinMain, tests.classpath).asPath
         }
     }
 }
