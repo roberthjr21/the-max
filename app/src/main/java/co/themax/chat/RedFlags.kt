@@ -41,7 +41,7 @@ private fun rule(pattern: String) = Regex("""\b(?:$pattern)\b""")
 private enum class Signal(val title: String, val description: String, pattern: String? = null) {
     PERSIST("Insistencia después de un no", "Se repitió una petición después de una negativa sobre el mismo tema."),
     ANSWER("Exigencia de respuesta inmediata", "Apareció una exigencia de contestar ya, un reclamo por estar en línea o una exigencia de pruebas.",
-        """(?:responde|contesta)(?:me)? (?:ya|ahora mismo)|(?:te vi|estabas|estas) en linea.{0,35}(?:no (?:me )?(?:contest|respond)|contestame)|(?:mandame|muestrame|enviame) pruebas de (?:que|lo que|donde) estabas|(?:idiota|imbecil|estupid[oa]).{0,35}(?:por (?:tardar|no contestar)|por que no (?:me )?(?:contestas|respondes))"""),
+        """(?:responde|contesta)(?:me)? (?:ya|ahora mismo)|(?:te vi|estabas|estas) en linea.{0,35}(?:no (?:me )?(?:contest(?:as|aste)|respond(?:es|iste))|contestame)|(?:mandame|muestrame|enviame) pruebas de (?:que|lo que|donde) estabas|(?:idiota|imbecil|estupid[oa]).{0,35}(?:por (?:tardar|no contestar)|por que no (?:me )?(?:contestas|respondes))"""),
     CONTROL("Control de amistades o salidas", "Apareció una orden sobre contactos, amistades o permisos para salir.",
         """(?:te prohibo|no te permito|no te dejo) (?:salir|hablar|ver)|(?:tienes que|debes) pedirme permiso para salir|(?:tienes que|quiero que) bloque(?:ar|es) a|(?:bloquea|deja de hablarle) a (?:tu|ese|esa)|alejate de tus amig[oa]s|no (?:puedes|vas a) salir con tus amig[oa]s"""),
     PRIVACY("Exigencia de acceso privado", "Se pidió acceso a claves personales o a conversaciones privadas.",
