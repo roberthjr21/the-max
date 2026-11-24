@@ -34,10 +34,13 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Preparar copia R8 de prueba con la identidad de depuración del runner
         run: |
+          # La anotación de compilador IncompatibleModifiers referencia una clase exclusiva del JDK.
+          echo '-dontwarn javax.lang.model.element.Modifier' > "$RUNNER_TEMP/test-r8.pro"
           cat > "$RUNNER_TEMP/emulator.gradle" <<'GRADLE'
           allprojects {
               plugins.withId('com.android.application') {
                   androidComponents.finalizeDsl { dsl ->
+                      dsl.buildTypes.release.testProguardFiles(new File(System.getenv('RUNNER_TEMP'), 'test-r8.pro'))
                       dsl.testBuildType = 'release'
                       dsl.buildTypes.release.signingConfig = dsl.signingConfigs.debug
                   }
