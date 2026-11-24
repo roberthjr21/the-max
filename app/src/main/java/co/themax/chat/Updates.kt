@@ -41,12 +41,12 @@ fun downloadUpdate(context: Context, update: Update): File {
                 }
             }
         }
-        require(hash.digest().joinToString("") { "%02x".format(it) } == update.digest) { "La descarga está incompleta o dañada." }
+        if (hash.digest().joinToString("") { "%02x".format(it) } != update.digest) throw ChatError("La descarga está incompleta o dañada.")
         val pm = context.packageManager
         val archive = pm.getPackageArchiveInfo(staged.path, PackageManager.GET_SIGNATURES)
         val current = pm.getPackageInfo(context.packageName, PackageManager.GET_SIGNATURES)
-        require(archive != null && archive.packageName == current.packageName && archive.versionCode == update.code &&
-            !current.signatures.isNullOrEmpty() && archive.signatures?.toSet() == current.signatures?.toSet()) { "La firma o la versión del APK no coincide." }
+        if (!(archive != null && archive.packageName == current.packageName && archive.versionCode == update.code &&
+            !current.signatures.isNullOrEmpty() && archive.signatures?.toSet() == current.signatures?.toSet())) throw ChatError("La firma o la versión del APK no coincide.")
         val target = File(directory, "verified-${update.code}.apk")
         check(staged.renameTo(target))
         return target

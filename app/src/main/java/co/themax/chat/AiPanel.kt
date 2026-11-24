@@ -16,7 +16,6 @@ import kotlinx.coroutines.*
 fun AiPreferences(store: AiSettings, onSaved: () -> Unit, onClose: () -> Unit) {
     var p by remember { mutableStateOf(store.provider) }
     var key by remember(p) { mutableStateOf("") }
-    var automatic by remember(p) { mutableStateOf(store.automatic(p)) }
     var erase by remember(p) { mutableStateOf(false) }
     var prompt by remember { mutableStateOf(store.prompt) }
     var error by remember { mutableStateOf("") }
@@ -32,16 +31,13 @@ fun AiPreferences(store: AiSettings, onSaved: () -> Unit, onClose: () -> Unit) {
             if (store.configured(p)) TextButton(onClick = { erase = !erase; key = "" }) {
                 Text(if (erase) "Deshacer eliminación" else "Eliminar clave al guardar")
             }
-            Text("Analizar cada chat al importarlo")
-            Switch(checked = automatic && !erase, onCheckedChange = { automatic = it },
-                enabled = !erase && (key.isNotBlank() || store.configured(p)))
-            Text("Al elegir quién eres, enviarás a ${p.label} hasta 80 mensajes recientes, 500 caracteres por mensaje y 12.000 en total, junto con tus instrucciones. El texto puede contener datos personales. Tu proveedor puede cobrar por cada chat. Puedes desactivarlo aquí.")
+            Text("Podrás revisar el fragmento y confirmar cada envío.")
             OutlinedTextField(prompt,{ prompt = it.take(2000) },label = { Text("Instrucciones de análisis") }, minLines = 3, maxLines = 7)
             TextButton(onClick = { prompt = DEFAULT_PROMPT }) { Text("Restablecer instrucciones") }
             if (error.isNotEmpty()) Text(error)
         }
     }, confirmButton = { Button(onClick = {
-        try { store.save(p,key,prompt,erase,automatic); key = ""; onSaved() }
+        try { store.save(p,key,prompt,erase,false); key = ""; onSaved() }
         catch (_: Exception) { error = "No se pudieron guardar los ajustes protegidos." }
     }) { Text("Guardar") } }, dismissButton = { TextButton(onClick = onClose) { Text("Cancelar") } })
 }
@@ -53,8 +49,7 @@ fun AiPanel(store: AiSettings, sample: List<AiLine>, total: Int, state: AiRun, s
     val busy = state is AiRun.Loading
     val result = (state as? AiRun.Done)?.result
     val error = (state as? AiRun.Failed)?.reason.orEmpty()
-    Card(shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = Color(0xffffe1e9))) {
-        Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    PastelCard(0xffffe1e9) {
             Text("Red flags con IA", style = MaterialTheme.typography.titleLarge)
             result?.let { r ->
                 Text("${r.percent} %",style = MaterialTheme.typography.headlineLarge)
@@ -70,10 +65,9 @@ fun AiPanel(store: AiSettings, sample: List<AiLine>, total: Int, state: AiRun, s
                 LinearProgressIndicator()
                 Text("Analizando el fragmento con ${p.label}…")
             } else if (sample.isEmpty()) Text("El chat no tiene mensajes con texto para analizar.")
-            else if (result == null) Button(onClick = { if (store.automatic(p)) start() else preview = true }) {
+            else if (result == null) Button(onClick = { preview = true }) {
                 Text(if (error.isNotEmpty()) "Reintentar" else "Analizar con ${p.label}")
             }
-        }
     }
     if (preview) AlertDialog(onDismissRequest = { preview = false }, title = { Text("¿Enviar a ${p.label}?") }, text = {
         Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement = Arrangement.spacedBy(8.dp)) {

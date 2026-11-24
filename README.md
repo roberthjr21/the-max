@@ -8,7 +8,9 @@ En WhatsApp abre el chat, selecciona **Más → Exportar chat → Sin archivos m
 
 ## Tarjetas de conversación
 
-La versión 1.1 incorpora palabras por participante, el mensaje más largo, expresiones compartidas, actividad, posibles frases de presión y sugerencias para responder. El nivel de interés describe tres señales observables de participación. El informe indica qué puede medirse en una exportación y qué requiere preguntarle a la otra persona. El cálculo funciona en el dispositivo, sin servicios de IA.
+El análisis local muestra actividad, palabras, tiempos típicos de respuesta, iniciativa y posibles señales de presión. Los chats importados se procesan en memoria.
+
+En **Menú → Ajustes de IA** puedes configurar una clave propia de OpenAI, Anthropic o Gemini. Antes de cada consulta verás las instrucciones y el fragmento: hasta 80 mensajes recientes, 500 caracteres por mensaje y 12.000 caracteres en total, con remitentes A y B. El texto puede contener datos personales. Solo se envía cuando confirmas **Enviar y analizar**. El proveedor puede cobrar por la consulta.
 
 ## Desarrollo
 
@@ -16,6 +18,6 @@ Kotlin, Jetpack Compose, JDK 17 y Android SDK 35. Ejecuta `./gradlew testDebugUn
 
 ## Actualizar una instalación
 
-Pulsa **Buscar actualización** al final de la pantalla. La app consulta el archivo público `downloads/latest.json`. Si hay una versión superior, descarga el APK, verifica el SHA-256, el identificador, el código de versión y la firma, y abre el instalador de Android para confirmar. En la primera actualización Android puede pedir autorización para instalar apps desde The Max.
+Pulsa **Buscar actualización** en el menú. La app consulta el archivo público `downloads/latest.json`. Si hay una versión superior, descarga el APK, verifica el SHA-256, el identificador, el código de versión y la firma, y abre el instalador de Android para confirmar. En la primera actualización Android puede pedir autorización para instalar apps desde The Max.
 
 Para distribuir otra versión, aumenta versionCode y versionName en app/build.gradle, ejecuta las pruebas, genera assembleRelease, firma el APK con la misma clave y usa el script de publicación descrito en scripts/package-release.sh. Sube los archivos de downloads juntos en un commit de main. Conserva la clave de firma en privado.
