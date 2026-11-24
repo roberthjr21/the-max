@@ -1,7 +1,7 @@
 package co.themax.chat
 
 import java.time.Duration
-import java.time.LocalDateTime
+import java.text.Normalizer
 import kotlin.math.roundToInt
 
 data class FlagReading(val title: String, val matches: Boolean, val explanation: String,
@@ -11,13 +11,15 @@ data class FlagReport(val counts: Map<String, Int>, val readings: List<FlagReadi
     fun tile(self: String, contact: String): Tile {
         val hits = readings.count { it.matches }
         val summary = when {
+            readings.any { it.matches && it.title == Signal.THREAT.title } -> "Se detectó una expresión de amenaza o chantaje"
             readings.isEmpty() -> "Datos insuficientes · ${counts.values.sum()} mensajes válidos"
-            hits < 2 -> "Sin combinación de señales · $hits de 8"
-            hits == 2 -> "Coincidencia media · 2 de 8"
-            else -> "Coincidencia alta · $hits de 8"
+            hits == 0 -> "Sin coincidencias con las expresiones revisadas"
+            hits == 1 -> "Una señal para revisar en contexto"
+            hits == 2 -> "Dos señales para revisar en contexto"
+            else -> "$hits señales para revisar en contexto"
         }
         val note = if (readings.isEmpty()) "Se necesitan 60 mensajes con contenido y al menos 10 de cada persona."
-            else "Dos patrones dan nivel medio y tres o más, alto. El nivel describe el chat y no mide la intención de nadie."
+            else "Las coincidencias describen expresiones del chat. Una amenaza explícita se muestra incluso en chats cortos."
         return Tile("Red flags", 0xffffbfd1, detail = listOf(summary, readings.filter { it.matches }.joinToString(" · ") { it.title }).filter { it.isNotEmpty() }.joinToString("\n"), note = "$note Todo se calcula en tu teléfono.",
             readings = readings.sortedByDescending { it.matches }.map { r ->
                 buildString {
@@ -33,109 +35,90 @@ data class FlagReport(val counts: Map<String, Int>, val readings: List<FlagReadi
 }
 
 private val systemRecord = Regex("""(?i)^(?:(?:llamada|videollamada)(?: de (?:voz|video))? (?:perdida|sin respuesta)|missed (?:voice |video )?call|you deleted this message|este mensaje fue eliminado|(?:los mensajes y las llamadas|messages and calls) (?:están cifrados de extremo a extremo|are end-to-end encrypted).*?)[.!]?$""")
-private val demand = Regex("""\b(?:contesta(?:me)? ya|responde(?:me)? ya|por que no me contestas.{0,30}(?:ahora mismo|te estoy esperando)|(?:donde estas|con quien estas).{0,45}(?:dime ya|responde ya|exijo saberlo))\b""")
-private val context = Regex("""\b(?:me dijo|me dijeron|por ejemplo|no digas|no dije|no me digas|la cancion dice)\b""")
-private val quotes = Regex("""[«“"][^»”"]*[»”"]""")
-private fun pressure(text: String): Boolean {
-    val direct = quotes.replace(java.text.Normalizer.normalize(text.lowercase(), java.text.Normalizer.Form.NFD)
-        .replace(combiningMarks, ""), " ")
-    return !context.containsMatchIn(direct) && (flagReasons(direct).isNotEmpty() || demand.containsMatchIn(direct))
+
+private fun rule(pattern: String) = Regex("""\b(?:$pattern)\b""")
+
+private enum class Signal(val title: String, val description: String, pattern: String? = null) {
+    PERSIST("Insistencia después de un no", "Se repitió una petición después de una negativa sobre el mismo tema."),
+    ANSWER("Exigencia de respuesta inmediata", "Apareció una exigencia de contestar ya, un reclamo por estar en línea o una exigencia de pruebas.",
+        """(?:responde|contesta)(?:me)? (?:ya|ahora mismo)|(?:te vi|estabas|estas) en linea.{0,35}(?:no (?:me )?(?:contest|respond)|contestame)|(?:mandame|muestrame|enviame) pruebas de (?:que|lo que|donde) estabas|(?:idiota|imbecil|estupid[oa]).{0,35}(?:por (?:tardar|no contestar)|por que no (?:me )?(?:contestas|respondes))"""),
+    CONTROL("Control de amistades o salidas", "Apareció una orden sobre contactos, amistades o permisos para salir.",
+        """(?:te prohibo|no te permito|no te dejo) (?:salir|hablar|ver)|(?:tienes que|debes) pedirme permiso para salir|(?:tienes que|quiero que) bloque(?:ar|es) a|(?:bloquea|deja de hablarle) a (?:tu|ese|esa)|alejate de tus amig[oa]s|no (?:puedes|vas a) salir con tus amig[oa]s"""),
+    PRIVACY("Exigencia de acceso privado", "Se pidió acceso a claves personales o a conversaciones privadas.",
+        """(?:dame|pasame|mandame|enviame|muestrame) (?:tu contrasena(?! (?:del?|para) (?:el )?(?:wifi|wi-fi))|(?:tu|la) clave (?:de (?:tu|tus)|del) (?:celular|telefono|instagram|whatsapp)|tus (?:chats|conversaciones|mensajes privados))|dejame (?:revisar|leer) tus (?:chats|conversaciones)"""),
+    GUILT("Presión mediante culpa", "La frase condiciona el cariño o la confianza a que la otra persona haga algo.",
+        """si (?:de verdad )?me (?:quisieras|amaras|quieres|amas).{0,45}(?:me (?:mandarias|enviarias|darias|mandas|darias acceso)|demuestramelo|tienes que)|si confiaras en mi.{0,30}me (?:darias|mostrarias)"""),
+    MOCK("Burla que continúa después de expresar dolor", "Se repitió una burla personal después de que la otra persona expresó que le dolía."),
+    BLAME("Culpa por el maltrato", "Quien escribe atribuye a la otra persona su propia forma de insultar o tratarla.",
+        """(?:tu )?me (?:hiciste|obligaste a) (?:hablarte asi|insultarte|tratarte asi)|por tu culpa (?:te (?:trate asi|insulte)|tuve que insultarte)"""),
+    THREAT("Amenaza o chantaje", "Se encontró una expresión directa de daño o de divulgar material privado. Una sola coincidencia activa esta señal.",
+        """te (?:voy a (?:hacer dano|pegar|golpear|matar)|hare dano)|voy a (?:publicar|difundir|filtrar|compartir) tus (?:fotos (?:privadas|intimas)|(?:chats|conversaciones) privad[oa]s?)|si (?:me (?:dejas|terminas)|no .{1,45})[, ]+(?:voy a (?:publicar|filtrar|difundir)|publico|filtro|difundo) tus (?:fotos|chats|conversaciones)""");
+    val direct = pattern?.let(::rule)
 }
-private val combiningMarks = Regex("""\p{M}+""")
-private fun fraction(part: Int, total: Int) = if (total == 0) "sin muestra"
-    else "$part de $total (${(part * 100.0 / total).roundToInt()} %)"
+
+private val quotedText = Regex("""[«“"‘'][^»”"’'\n]*[»”"’']""")
+private val reportedSpeech = rule("""(?:me|te|le) (?:dijo|dijeron|escribio)|por ejemplo|un ejemplo|no (?:digas|dije|me digas)|si (?:alguien|te) (?:te )?dice|la cancion dice""")
+private val negated = Regex("""\b(?:no|nunca|jamas)(?: (?:te|yo))*\s*$""")
+private val diacritics = Regex("""\p{M}+""")
+private val clauses = Regex("""[.!?;\n]+""")
+private fun directText(raw: String): String {
+    val plain = Normalizer.normalize(raw.lowercase(java.util.Locale.ROOT), Normalizer.Form.NFD).replace(diacritics, "")
+    return quotedText.replace(plain, " ").split(clauses)
+        .filterNot { it.trimStart().startsWith(">") || reportedSpeech.containsMatchIn(it) }.filter { it.isNotBlank() }.joinToString("\n").trim()
+}
+
+private fun Regex.asserted(text: String) = findAll(text).any { match ->
+    !negated.containsMatchIn(text.substring(maxOf(0, match.range.first - 25), match.range.first))
+}
+private data class Topic(val subject: Regex, val request: Regex)
+private val topics = listOf(
+    Topic(rule("foto[s]?"), rule("""(?:mandame|enviame|pasame) (?:una |la |esa |otra )?foto|manda(?:me)?la|envia(?:me)?la""")),
+    Topic(rule("salir|salgamos|sal conmigo"), rule("salgamos|sal conmigo|acepta salir")),
+    Topic(rule("hablar|hablemos|habla de"), rule("hablemos de (?:eso|ese tema)|habla de eso|tienes que hablar de"))
+)
+private val refusal = Regex("""(?:^\s*[¿¡]?\s*no\s*$|\b(?:no quiero|ya (?:te )?dije que no|prefiero no|no voy a|no gracias)\b)""")
+private val accepted = rule("esta bien|cambio de opinion|cambie de opinion|mejor si|ahora si")
+private val hurt = rule("me duele|me dolio|me lastima|deja de burlarte|no te burles de mi")
+private val mockery = listOf(rule("eres (?:un |una )?(?:gord[oa]|gord[oa] asqueros[oa])|que gord[oa] (?:eres|estas)"),
+    rule("eres (?:un |una )?(?:inutil|fracasad[oa])"), rule("que (?:nariz|cara) tan (?:fea|horrible)"))
+private data class Turn(val sender: String, val text: String, val time: java.time.LocalDateTime)
 
 fun analyzeFlags(input: List<Message>): FlagReport {
-    val rows = input.mapNotNull { m -> visibleBody(m.body)?.takeUnless(systemRecord::matches)?.let { m.copy(body = it) } }
-        .sortedBy { it.time }
-    val people = rows.groupBy { it.sender }
-    val counts = people.mapValues { it.value.size }
-    if (rows.size < 60 || counts.size != 2 || counts.values.min() < 10) return FlagReport(counts, emptyList())
-    val names = people.keys.toList()
-    val evidence = mutableListOf<FlagReading>()
-    fun add(title: String, active: Boolean, description: String, detail: (String) -> String) {
-        evidence += FlagReading(title, active, description, names.associateWith(detail))
-    }
-    val starts = names.associateWith { 0 }.toMutableMap()
-    val delays = names.associateWith { mutableListOf<Long>() }
-    val breaks = names.associateWith { 0 }.toMutableMap()
-    val before = breaks.toMutableMap()
-    for (i in 1 until rows.size) {
-        val last = rows[i - 1]
-        val next = rows[i]
-        val gap = Duration.between(last.time, next.time)
-        if (gap >= Duration.ofHours(8)) starts[next.sender] = starts.getValue(next.sender) + 1
-        if (gap <= Duration.ofDays(1) && last.sender != next.sender) delays.getValue(next.sender).add(gap.seconds)
-        if (gap > Duration.ofDays(1)) {
-            before[last.sender] = before.getValue(last.sender) + 1
-            breaks[next.sender] = breaks.getValue(next.sender) + 1
-        }
-    }
-    val sessions = starts.values.sum()
-    add("Quién retoma la charla", sessions >= 6 && starts.values.max() * 4 > sessions * 3,
-        "Contamos reinicios tras 8 horas de silencio. Coincide si alguien supera el 75 % con al menos 6 reinicios.") {
-        fraction(starts.getValue(it), sessions)
-    }
-    fun consistent(name: String, check: (Long) -> Boolean): Boolean {
-        val times = delays.getValue(name)
-        return times.size >= 6 && times.count(check) * 10 >= times.size * 7
-    }
-    add("Ritmos de respuesta", names.any { consistent(it) { t -> t <= 15 * 60 } } && names.any { consistent(it) { t -> t >= 120 * 60 } },
-        "Comparamos cambios de turno de hasta 24 h. Coincide con 6 respuestas por persona y al menos 70 % en ritmos opuestos.") {
-        val times = delays.getValue(it)
-        "En 15 min o menos: ${fraction(times.count { t -> t <= 15 * 60 }, times.size)}. En 2 h o más: ${fraction(times.count { t -> t >= 120 * 60 }, times.size)}."
-    }
-    val short = people.mapValues { (_, msgs) -> msgs.count { it.body.codePointCount(0, it.body.length) <= 12 } }
-    val long = people.mapValues { (_, msgs) -> msgs.count { it.body.codePointCount(0, it.body.length) >= 60 } }
-    add("Longitud de los mensajes", names.any { short.getValue(it) >= counts.getValue(it) * .6 } &&
-        names.any { long.getValue(it) >= counts.getValue(it) * .6 },
-        "Coincide si en una persona predominan los mensajes cortos y en la otra los largos (60 % o más en ambos casos).") {
-        "Hasta 12 caracteres: ${fraction(short.getValue(it), counts.getValue(it))}. Desde 60: ${fraction(long.getValue(it), counts.getValue(it))}."
-    }
-    val gaps = breaks.values.sum()
-    add("Pausas de más de un día", gaps >= 2 && gaps * 4 >= sessions,
-        "Reinicios tras más de 24 h: ${fraction(gaps, sessions)}. Coincide desde 2 pausas y el 25 % de los reinicios. Solo sabemos quién escribió antes y después.") {
-        "Último mensaje antes de la pausa: ${before[it]}. Primer mensaje al volver: ${breaks[it]}."
-    }
-    val questions = names.associateWith { 0 }.toMutableMap()
-    val missed = questions.toMutableMap()
-    val nextTime = mutableMapOf<String, LocalDateTime>()
-    for (msg in rows.asReversed()) {
-        val other = if (msg.sender == names.first()) names.last() else names.first()
-        if ('?' in msg.body || '¿' in msg.body) {
-            val deadline = msg.time.plusDays(1)
-            val replied = nextTime[other]?.let { it <= deadline } == true
-            if (replied || deadline <= rows.last().time) {
-                questions[msg.sender] = questions.getValue(msg.sender) + 1
-                if (!replied) missed[msg.sender] = missed.getValue(msg.sender) + 1
+    val counts = mutableMapOf<String, Int>()
+    val hits = Signal.values().associateWith { mutableMapOf<String, Int>() }
+    var previous: Turn? = null
+    var earlier: Turn? = null
+    for (message in input.sortedBy { it.time }) {
+        val body = visibleBody(message.body)?.takeUnless(systemRecord::matches) ?: continue
+        val sender = message.sender
+        counts[sender] = counts.getOrDefault(sender, 0) + 1
+        val text = directText(body)
+        val last = previous
+        val before = earlier
+        val reply = last != null && last.sender != sender && Duration.between(last.time, message.time) <= Duration.ofHours(2)
+        val exchange = reply && before != null && before.sender == sender &&
+            Duration.between(before.time, message.time) <= Duration.ofHours(2)
+        for (signal in Signal.values()) {
+            val matched = when (signal) {
+                Signal.PERSIST -> reply && refusal.containsMatchIn(last!!.text) && !accepted.containsMatchIn(last.text) && topics.any { topic ->
+                    topic.request.asserted(text) && (topic.subject.containsMatchIn(last.text) ||
+                        (exchange && last.text.trim() in setOf("no", "no gracias", "ya te dije que no") && topic.request.asserted(before!!.text)))
+                }
+                Signal.MOCK -> exchange && hurt.containsMatchIn(last!!.text) && mockery.any { it.asserted(before!!.text) && it.asserted(text) }
+                else -> signal.direct!!.asserted(text)
             }
+            if (matched) hits.getValue(signal).merge(sender, 1, Int::plus)
         }
-        nextTime[msg.sender] = msg.time
+        earlier = last
+        previous = Turn(sender, text, message.time)
     }
-    add("Preguntas sin un mensaje de vuelta", names.any { questions.getValue(it) >= 5 && missed.getValue(it) >= 3 && missed.getValue(it) * 2 >= questions.getValue(it) },
-        "Mensajes con ¿ o ? sin otro mensaje de la otra persona en 24 h. Coincide desde 3 casos y el 50 % de al menos 5 preguntas evaluables. No sabemos si las leyeron.") {
-        fraction(missed.getValue(it), questions.getValue(it))
-    }
-    val demands = people.mapValues { (_, msgs) -> msgs.filter { pressure(it.body) } }
-    add("Frases de presión", demands.values.any { list -> list.map { it.time.toLocalDate() }.distinct().size >= 2 },
-        "Coincide al encontrar expresiones directas en dos días distintos de una persona. «¿Dónde estás?» por sí sola puede ser una pregunta para cuadrar un plan.") {
-        "${fraction(demands.getValue(it).size, counts.getValue(it))} mensajes."
-    }
-    val nights = people.mapValues { (_, msgs) -> msgs.filter { it.time.hour < 5 } }
-    add("Mensajes de madrugada", names.any { nights.getValue(it).size >= counts.getValue(it) * .25 &&
-        nights.getValue(it).map { m -> m.time.toLocalDate() }.distinct().size >= 3 },
-        "Entre medianoche y las 4:59 a. m., según el archivo. Coincide desde 3 madrugadas y el 25 % de los mensajes de una persona.") {
-        fraction(nights.getValue(it).size, counts.getValue(it))
-    }
-    val end = rows.last().time.toLocalDate()
-    val cut = end.minusDays(14)
-    val start = cut.minusDays(14)
-    val older = rows.filter { it.time.toLocalDate() >= start && it.time.toLocalDate() < cut }
-    val newer = rows.count { it.time.toLocalDate() >= cut && it.time.toLocalDate() < end }
-    val enough = rows.first().time.toLocalDate() <= start && older.size >= 20 && older.map { it.time.toLocalDate() }.distinct().size >= 4
-    val drop = if (enough) ((older.size - newer) * 100.0 / older.size).roundToInt() else 0
-    evidence += FlagReading("Cambio de ritmo", enough && newer * 2 <= older.size, if (enough)
-        "De ${older.size} a $newer mensajes en dos bloques de 14 días completos. ${if (drop > 0) "Bajó $drop %" else if (drop < 0) "Subió ${-drop} %" else "Sin cambio"}. Coincide con una caída del 50 % o más."
-        else "Falta historial comparable: 28 días completos y al menos 20 mensajes en 4 días del primer bloque. Se excluye el último día del archivo.")
-    return FlagReport(counts, evidence)
+    val sufficient = counts.size == 2 && counts.values.sum() >= 60 && counts.values.all { it >= 10 }
+    val signals = if (sufficient) Signal.values().toList() else listOf(Signal.THREAT).filter { hits.getValue(it).isNotEmpty() }
+    return FlagReport(counts, signals.map { signal ->
+        val matches = hits.getValue(signal)
+        FlagReading(signal.title, matches.isNotEmpty(), signal.description, counts.mapValues { (sender, total) ->
+            val n = matches.getOrDefault(sender, 0)
+            "$n de $total mensajes (${(100.0 * n / total).roundToInt()} %)"
+        })
+    })
 }
