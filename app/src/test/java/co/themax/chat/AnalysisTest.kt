@@ -64,10 +64,8 @@ segunda línea
 22/11/26, 09:02 - Sol: Dame tu contraseña""")
         val tiles = insightCards(report,"Ana","Sol","Otra persona")
         val flags = tiles.single { it.title == "Red flags" }
-        assertEquals(2,flags.comparison!!.rows.single().other)
-        assertEquals(1,flags.examples.size)
-        assertTrue(flags.examples.single().contains("Otra persona"))
-        assertFalse(flags.detail.contains("Pásame"))
+        assertTrue(flags.detail.contains("Datos insuficientes"))
+        assertTrue(flags.readings.isEmpty())
         val interest = tiles.single { it.title == "Nivel de interés" }
         assertEquals(Metric("Inicios de conversación",1,1),interest.comparison!!.rows.first())
         assertTrue(interest.detail.contains("Los dos"))

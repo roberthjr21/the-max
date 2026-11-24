@@ -9,7 +9,7 @@ data class Message(val time: LocalDateTime, val sender: String, val body: String
 data class Report(val names: List<String>, val counts: Map<String, Int>, val delays: Map<String, Long>,
     val starts: Map<String, Int>, val first: Message?, val peak: String, val words: List<String>, val emoji: String?, val insights: Insights)
 
-private val header = Regex("""^\[?(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4}),?\s+(\d{1,2}):(\d{2})(?::\d{2})?\s*([ap]\.?\s*m\.?)?\]?\s*(?:-\s+)?(.+)$""", RegexOption.IGNORE_CASE)
+private val header = Regex("""^\[?(\d{4}|\d{1,2})[/.-](\d{1,2})[/.-](\d{4}|\d{2}|\d),?\s+(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([ap]\.?\s*m\.?)?\]?\s*(?:-\s+)?(.+)$""", RegexOption.IGNORE_CASE)
 private const val limit = 16 * 1024 * 1024
 
 fun readExport(input: InputStream): String {
@@ -45,26 +45,36 @@ fun analyze(text: String): Report {
     val body = StringBuilder()
     var pending: Message? = null
     fun flush() { pending?.let { rows.add(it.copy(body = body.toString())) }; body.clear(); pending = null }
+    fun clean(raw: String) = raw.trimStart('\uFEFF','\u200e','\u200f').replace('\u202f',' ').replace('\u00a0',' ')
+    // A four-digit leading year identifies ISO order. Ambiguous short dates default to Colombia.
+    val monthFirst = text.lineSequence().mapNotNull { header.matchEntire(clean(it))?.groupValues }
+        .firstOrNull { it[1].length <= 2 && (it[1].toInt() > 12 || it[2].toInt() > 12) }
+        ?.let { it[2].toInt() > 12 } ?: false
     for (raw in text.lineSequence()) {
-        val line = raw.trimStart('\uFEFF','\u200e','\u200f').replace('\u202f',' ').replace('\u00a0',' ')
+        val line = clean(raw)
         val parts = header.matchEntire(line)?.groupValues
         if (parts == null) {
             if (pending != null) body.append('\n').append(line)
             continue
         }
         flush()
-        val payload = parts[7]
+        val payload = parts[8]
         val split = payload.indexOf(": ")
         if (split < 1) continue
-        val marker = parts[6].lowercase()
+        val marker = parts[7].lowercase()
         val hour = parts[4].toInt().let { if (marker.isEmpty()) it else it % 12 + if (marker.startsWith("p")) 12 else 0 }
-        val time = runCatching { LocalDateTime.of(parts[3].toInt().let { if (it < 100) 2000 + it else it },
-            parts[2].toInt(), parts[1].toInt(), hour, parts[5].toInt()) }.getOrNull() ?: continue
+        if (marker.isNotEmpty() && parts[4].toInt() !in 1..12) continue
+        val iso = parts[1].length == 4
+        val year = parts[if (iso) 1 else 3].toInt()
+        val month = parts[if (!iso && monthFirst) 1 else 2].toInt()
+        val day = parts[if (iso) 3 else if (monthFirst) 2 else 1].toInt()
+        val time = runCatching { LocalDateTime.of(if (year < 100) year + 2000 else year, month, day,
+            hour, parts[5].toInt(), parts[6].toIntOrNull() ?: 0) }.getOrNull() ?: continue
         pending = Message(time, payload.substring(0,split).trim(), "")
         body.append(payload.substring(split+2))
     }
     flush()
-    require(rows.isNotEmpty()) { "No se reconocieron mensajes. Usa una exportación con fecha día/mes/año." }
+    require(rows.isNotEmpty()) { "No se reconocieron mensajes. Revisa que el archivo incluya la fecha, la hora y el remitente." }
     val counts = rows.groupingBy { it.sender }.eachCount()
     require(counts.size == 2) { "Para este resumen se necesitan dos participantes. Encontramos ${counts.size}." }
     val starts = mutableMapOf(rows.first().sender to 1)
