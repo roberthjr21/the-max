@@ -95,6 +95,10 @@ class MainActivity : ComponentActivity() {
             val uri = intent.takeIf { it.action == Intent.ACTION_SEND }?.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
             if (uri != null && result == null && pending == null) load(uri)
         }
+        val aiStore = remember { AiSettings(applicationContext) }
+        var showSettings by remember { mutableStateOf(false) }
+        var settingsRevision by remember { mutableIntStateOf(0) }
+        if (showSettings) AiPreferences(aiStore, { settingsRevision++; showSettings = false }, { showSettings = false })
         val report = result ?: demo
         val self = if (result == null) demo.names.first() else me
         val other = report.names.first { it != self }
@@ -107,6 +111,7 @@ class MainActivity : ComponentActivity() {
                 Spacer(Modifier.width(8.dp))
                 Text("The Max", color = green, fontSize = 26.sp, fontWeight = FontWeight.Black)
             }
+            TextButton(onClick = { showSettings = true }) { Text("Ajustes de IA") }
             if (result == null) Text("VISTA DE EJEMPLO", Modifier.align(Alignment.CenterHorizontally), color = green,
                 style = MaterialTheme.typography.labelMedium)
             Text(buildAnnotatedString {
@@ -136,6 +141,10 @@ class MainActivity : ComponentActivity() {
                     else work { shareCard(this@MainActivity,tile) }
                 }) else null, if (result == null) "Importar mi chat" else "Compartir tarjeta",
                     if (result != null && i != 0) ({ work { shareCard(this@MainActivity,tile) } }) else null)
+                if (tile.title == "Red flags" && result != null) key(report, settingsRevision) {
+                    val flags = report.insights.flags
+                    AiPanel(aiStore, flags.sample, flags.counts.values.sum(), { summary -> work { shareCard(this@MainActivity, summary) } }) { showSettings = true }
+                }
             }
             if (result != null) {
                 Row(verticalAlignment = Alignment.CenterVertically) {

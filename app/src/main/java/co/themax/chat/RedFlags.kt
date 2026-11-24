@@ -7,7 +7,7 @@ import kotlin.math.roundToInt
 data class FlagReading(val title: String, val matches: Boolean, val explanation: String,
     val bySender: Map<String, String> = emptyMap())
 
-data class FlagReport(val counts: Map<String, Int>, val readings: List<FlagReading>) {
+data class FlagReport(val counts: Map<String, Int>, val readings: List<FlagReading>, val sample: List<AiLine> = emptyList()) {
     fun tile(self: String, contact: String): Tile {
         val hits = readings.count { it.matches }
         val summary = when {
@@ -34,7 +34,7 @@ data class FlagReport(val counts: Map<String, Int>, val readings: List<FlagReadi
     }
 }
 
-private val systemRecord = Regex("""(?i)^(?:(?:llamada|videollamada)(?: de (?:voz|video))? (?:perdida|sin respuesta)|missed (?:voice |video )?call|you deleted this message|este mensaje fue eliminado|(?:los mensajes y las llamadas|messages and calls) (?:están cifrados de extremo a extremo|are end-to-end encrypted).*?)[.!]?$""")
+internal val systemRecord = Regex("""(?i)^(?:(?:llamada|videollamada)(?: de (?:voz|video))? (?:perdida|sin respuesta)|missed (?:voice |video )?call|you deleted this message|este mensaje fue eliminado|(?:los mensajes y las llamadas|messages and calls) (?:están cifrados de extremo a extremo|are end-to-end encrypted).*?)[.!]?$""")
 
 private fun rule(pattern: String) = Regex("""\b(?:$pattern)\b""")
 
@@ -88,7 +88,8 @@ fun analyzeFlags(input: List<Message>): FlagReport {
     val hits = Signal.values().associateWith { mutableMapOf<String, Int>() }
     var previous: Turn? = null
     var earlier: Turn? = null
-    for (message in input.sortedBy { it.time }) {
+    val ordered = input.sortedBy { it.time }
+    for (message in ordered) {
         val body = visibleBody(message.body)?.takeUnless(systemRecord::matches) ?: continue
         val sender = message.sender
         counts[sender] = counts.getOrDefault(sender, 0) + 1
@@ -120,5 +121,5 @@ fun analyzeFlags(input: List<Message>): FlagReport {
             val n = matches.getOrDefault(sender, 0)
             "$n de $total mensajes (${(100.0 * n / total).roundToInt()} %)"
         })
-    })
+    }, fragment(ordered))
 }
