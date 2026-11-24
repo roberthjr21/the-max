@@ -43,3 +43,10 @@ internal fun parseAi(raw: String, lines: List<AiLine>): AiResult {
     }
     return AiResult(percent, string(obj,"resumen",400), findings)
 }
+
+sealed interface AiRun {
+    object Idle : AiRun
+    object Loading : AiRun
+    data class Done(val result: AiResult) : AiRun
+    data class Failed(val reason: String) : AiRun
+}

@@ -38,6 +38,29 @@ private val demo by lazy { analyze("""21/11/26, 9:00 - Tú: Buenos días ☀️
 
 class MainActivity : ComponentActivity() {
     private class ChatState : androidx.lifecycle.ViewModel() {
+        private val aiScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        private var job: Job? = null
+        var ai by mutableStateOf<AiRun>(AiRun.Idle)
+            private set
+        fun resetAi() { job?.cancel(); ai = AiRun.Idle }
+        fun startAi(store: AiSettings, report: Report) {
+            val p = store.provider
+            val sample = report.insights.flags.sample
+            if (ai is AiRun.Loading || ai is AiRun.Done || sample.isEmpty() || !store.configured(p)) return
+            val instructions = store.prompt
+            ai = AiRun.Loading
+            job = aiScope.launch {
+                ai = try {
+                    AiRun.Done(withContext(Dispatchers.IO) {
+                        val key = try { store.key(p) } catch (_: Exception) { throw AiFailure("Vuelve a guardar la clave en Ajustes.") }
+                        analyzeOnline(p,key,instructions,sample)
+                    })
+                } catch (e: CancellationException) { throw e }
+                catch (e: AiFailure) { AiRun.Failed(e.message.orEmpty()) }
+                catch (_: Exception) { AiRun.Failed("No se pudo completar la consulta.") }
+            }
+        }
+        override fun onCleared() { aiScope.cancel() }
         var result by mutableStateOf<Report?>(null)
         var pending by mutableStateOf<Report?>(null)
         var me by mutableStateOf("")
@@ -98,7 +121,7 @@ class MainActivity : ComponentActivity() {
         val aiStore = remember { AiSettings(applicationContext) }
         var showSettings by remember { mutableStateOf(false) }
         var settingsRevision by remember { mutableIntStateOf(0) }
-        if (showSettings) AiPreferences(aiStore, { settingsRevision++; showSettings = false }, { showSettings = false })
+        if (showSettings) AiPreferences(aiStore, { chat.resetAi(); settingsRevision++; showSettings = false }, { showSettings = false })
         val report = result ?: demo
         val self = if (result == null) demo.names.first() else me
         val other = report.names.first { it != self }
@@ -136,15 +159,20 @@ class MainActivity : ComponentActivity() {
             if (section == "Señales" && result == null) OutlinedButton(onClick = { picker.launch(arrayOf("*/*")) }) { Text("Importar mi chat") }
             cards.forEachIndexed { i, tile ->
                 if ((section == "Resumen" && i >= 6) || (section == "Señales" && i < 6)) return@forEachIndexed
+                if (tile.title == "Red flags" && result != null && aiStore.configured(aiStore.provider)) {
+                    val flags = report.insights.flags
+                    key(report, settingsRevision) {
+                        AiPanel(aiStore, flags.sample, flags.counts.values.sum(), chat.ai,
+                            { chat.startAi(aiStore, report) }, { summary -> work { shareCard(this@MainActivity, summary) } })
+                    }
+                    return@forEachIndexed
+                }
                 TileView(tile, if (i == 0) ({
                     if (result == null) picker.launch(arrayOf("text/plain","application/zip","application/x-zip-compressed","application/octet-stream"))
                     else work { shareCard(this@MainActivity,tile) }
                 }) else null, if (result == null) "Importar mi chat" else "Compartir tarjeta",
                     if (result != null && i != 0) ({ work { shareCard(this@MainActivity,tile) } }) else null)
-                if (tile.title == "Red flags" && result != null) key(report, settingsRevision) {
-                    val flags = report.insights.flags
-                    AiPanel(aiStore, flags.sample, flags.counts.values.sum(), { summary -> work { shareCard(this@MainActivity, summary) } }) { showSettings = true }
-                }
+
             }
             if (result != null) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -162,7 +190,9 @@ class MainActivity : ComponentActivity() {
         if (busy) AlertDialog(onDismissRequest = {},title = { Text("Un momento…") },text = { LinearProgressIndicator() },confirmButton = {})
         pending?.let { candidate -> AlertDialog(onDismissRequest = { pending = null },title = { Text("¿Cuál de los dos eres tú?") },
             text = { Column { candidate.names.forEach { person -> TextButton(onClick = {
+                chat.resetAi()
                 me = person; result = candidate; pending = null
+                if (aiStore.automatic(aiStore.provider)) chat.startAi(aiStore, candidate)
             }) { Text(person) } } } },confirmButton = {}) }
         update?.let { available -> AlertDialog(onDismissRequest = { update = null },title = { Text("The Max ${available.name}") },
             text = { Text("Hay una versión nueva. Android te pedirá confirmar la instalación.") },

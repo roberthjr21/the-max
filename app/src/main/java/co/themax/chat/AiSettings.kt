@@ -29,9 +29,12 @@ class AiSettings(context: Context) {
             generateKey()
         }
     }
-    fun save(p: Provider, replacement: String, instructions: String, erase: Boolean) {
+    fun automatic(p: Provider) = configured(p) && prefs.getBoolean("auto." + p.name, false)
+
+    fun save(p: Provider, replacement: String, instructions: String, erase: Boolean, automatic: Boolean) {
         require(instructions.length <= 2000)
         val edit = prefs.edit().putString("provider", p.name).putString("prompt", instructions.ifBlank { DEFAULT_PROMPT })
+        edit.putBoolean("auto." + p.name, automatic && !erase && (replacement.isNotBlank() || configured(p)))
         if (erase) edit.remove(p.name)
         else if (replacement.isNotBlank()) {
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")

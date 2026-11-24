@@ -16,6 +16,7 @@ import kotlinx.coroutines.*
 fun AiPreferences(store: AiSettings, onSaved: () -> Unit, onClose: () -> Unit) {
     var p by remember { mutableStateOf(store.provider) }
     var key by remember(p) { mutableStateOf("") }
+    var automatic by remember(p) { mutableStateOf(store.automatic(p)) }
     var erase by remember(p) { mutableStateOf(false) }
     var prompt by remember { mutableStateOf(store.prompt) }
     var error by remember { mutableStateOf("") }
@@ -31,24 +32,27 @@ fun AiPreferences(store: AiSettings, onSaved: () -> Unit, onClose: () -> Unit) {
             if (store.configured(p)) TextButton(onClick = { erase = !erase; key = "" }) {
                 Text(if (erase) "Deshacer eliminación" else "Eliminar clave al guardar")
             }
+            Text("Analizar cada chat al importarlo")
+            Switch(checked = automatic && !erase, onCheckedChange = { automatic = it },
+                enabled = !erase && (key.isNotBlank() || store.configured(p)))
+            Text("Al elegir quién eres, enviarás a ${p.label} hasta 80 mensajes recientes, 500 caracteres por mensaje y 12.000 en total, junto con tus instrucciones. El texto puede contener datos personales. Tu proveedor puede cobrar por cada chat. Puedes desactivarlo aquí.")
             OutlinedTextField(prompt,{ prompt = it.take(2000) },label = { Text("Instrucciones de análisis") }, minLines = 3, maxLines = 7)
             TextButton(onClick = { prompt = DEFAULT_PROMPT }) { Text("Restablecer instrucciones") }
             if (error.isNotEmpty()) Text(error)
         }
     }, confirmButton = { Button(onClick = {
-        try { store.save(p,key,prompt,erase); key = ""; onSaved() }
+        try { store.save(p,key,prompt,erase,automatic); key = ""; onSaved() }
         catch (_: Exception) { error = "No se pudieron guardar los ajustes protegidos." }
     }) { Text("Guardar") } }, dismissButton = { TextButton(onClick = onClose) { Text("Cancelar") } })
 }
 
 @Composable
-fun AiPanel(store: AiSettings, sample: List<AiLine>, total: Int, share: (Tile) -> Unit, settings: () -> Unit) {
+fun AiPanel(store: AiSettings, sample: List<AiLine>, total: Int, state: AiRun, start: () -> Unit, share: (Tile) -> Unit) {
     val p = store.provider
-    val scope = rememberCoroutineScope()
     var preview by remember { mutableStateOf(false) }
-    var busy by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf("") }
-    var result by remember { mutableStateOf<AiResult?>(null) }
+    val busy = state is AiRun.Loading
+    val result = (state as? AiRun.Done)?.result
+    val error = (state as? AiRun.Failed)?.reason.orEmpty()
     Card(shape = RoundedCornerShape(24.dp), colors = CardDefaults.cardColors(containerColor = Color(0xffffe1e9))) {
         Column(Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Red flags con IA", style = MaterialTheme.typography.titleLarge)
@@ -62,9 +66,12 @@ fun AiPanel(store: AiSettings, sample: List<AiLine>, total: Int, share: (Tile) -
                     note = "Estimación de ${p.label} sobre ${sample.size} mensajes.")) }) { Text("Compartir porcentaje sin citas") }
             }
             if (error.isNotEmpty()) Text(error)
-            if (!store.configured(p)) TextButton(onClick = settings) { Text("Configurar IA opcional") }
-            else Button(enabled = !busy && sample.isNotEmpty(), onClick = { preview = true }) {
-                Text(if (busy) "Analizando…" else "Revisar fragmento con ${p.label}")
+            if (busy) {
+                LinearProgressIndicator()
+                Text("Analizando el fragmento con ${p.label}…")
+            } else if (sample.isEmpty()) Text("El chat no tiene mensajes con texto para analizar.")
+            else if (result == null) Button(onClick = { if (store.automatic(p)) start() else preview = true }) {
+                Text(if (error.isNotEmpty()) "Reintentar" else "Analizar con ${p.label}")
             }
         }
     }
@@ -75,20 +82,7 @@ fun AiPanel(store: AiSettings, sample: List<AiLine>, total: Int, share: (Tile) -
             sample.forEachIndexed { i,l -> Text("${i+1} · ${l.speaker}\n${l.text}") }
         }
     }, confirmButton = { Button(onClick = {
-        if (!busy) {
-            preview = false; busy = true; error = ""; result = null
-            val instructions = store.prompt
-            scope.launch {
-                try {
-                    result = withContext(Dispatchers.IO) {
-                        val key = try { store.key(p) } catch (_: Exception) { throw AiFailure("Vuelve a guardar tu clave en Ajustes.") }
-                        analyzeOnline(p,key,instructions,sample)
-                    }
-                } catch (e: CancellationException) { throw e }
-                catch (e: AiFailure) { error = e.message.orEmpty() }
-                catch (_: Exception) { error = "No se pudo completar la consulta. El análisis local sigue disponible." }
-                finally { busy = false }
-            }
-        }
+        preview = false
+        start()
     }) { Text("Enviar y analizar") } }, dismissButton = { TextButton(onClick = { preview = false }) { Text("Cancelar") } })
 }
