@@ -134,7 +134,24 @@ class MainActivity : ComponentActivity() {
                 Spacer(Modifier.width(8.dp))
                 Text("The Max", color = green, fontSize = 26.sp, fontWeight = FontWeight.Black)
             }
-            TextButton(onClick = { showSettings = true }) { Text("Ajustes de IA") }
+            var menu by rememberSaveable { mutableStateOf(false) }
+            TextButton(onClick = { menu = true }, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text("Menú") }
+            if (menu) AlertDialog(onDismissRequest = { menu = false },
+                title = { Text("The Max · v${BuildConfig.VERSION_NAME}") },
+                text = {
+                    Column(Modifier.verticalScroll(rememberScrollState())) {
+                        Text("Convierte tu chat exportado de WhatsApp en tarjetas sobre cómo conversan. Puedes activar la IA para revisar posibles señales de alerta.")
+                        TextButton(onClick = { menu = false; showSettings = true }) { Text("Ajustes de IA") }
+                        TextButton(enabled = !busy, onClick = {
+                            menu = false
+                            work {
+                                val available = withContext(Dispatchers.IO) { latest() }
+                                if (available.code > BuildConfig.VERSION_CODE) update = available
+                                else notice = "Tienes la versión más reciente."
+                            }
+                        }) { Text("Buscar actualización") }
+                    }
+                }, confirmButton = { TextButton(onClick = { menu = false }) { Text("Cerrar") } })
             if (result == null) Text("VISTA DE EJEMPLO", Modifier.align(Alignment.CenterHorizontally), color = green,
                 style = MaterialTheme.typography.labelMedium)
             Text(buildAnnotatedString {
@@ -180,11 +197,6 @@ class MainActivity : ComponentActivity() {
                 }
                 TextButton(onClick = { picker.launch(arrayOf("*/*")) },enabled = !busy) { Text("Importar otro chat") }
             } else Text("En WhatsApp, exporta un chat individual sin multimedia. El análisis se hace en este teléfono.",color = ink)
-            OutlinedButton(onClick = { work {
-                val available = withContext(Dispatchers.IO) { latest() }
-                if (available.code > BuildConfig.VERSION_CODE) update = available
-                else notice = "Tienes la versión más reciente."
-            } },enabled = !busy,modifier = Modifier.fillMaxWidth()) { Text("Buscar actualización · v${BuildConfig.VERSION_NAME}") }
             Spacer(Modifier.height(12.dp))
         }
         if (busy) AlertDialog(onDismissRequest = {},title = { Text("Un momento…") },text = { LinearProgressIndicator() },confirmButton = {})

@@ -39,7 +39,7 @@ segunda línea
         assertEquals(0,sol.longPauses)
         val cards = insightCards(report,"Sol","Ana","Otra persona")
         assertEquals(11,cards.size)
-        assertTrue(cards.last().detail.contains("luna azul"))
+        assertTrue(cards.single { it.title == "Expresiones que ambos usan" }.detail.contains("luna azul"))
         assertTrue(cards.first { it.title == "Mensaje más largo" }.detail.contains("café"))
     }
     @Test fun invisibleAndDeletedEntriesDoNotHideTheFirstText() {
@@ -66,9 +66,8 @@ segunda línea
         val flags = tiles.single { it.title == "Red flags" }
         assertTrue(flags.detail.contains("Datos insuficientes"))
         assertTrue(flags.readings.isEmpty())
-        val interest = tiles.single { it.title == "Nivel de interés" }
-        assertEquals(Metric("Inicios de conversación",1,1),interest.comparison!!.rows.first())
-        assertTrue(interest.detail.contains("Los dos"))
+        assertEquals("Interés en la conversación", tiles.last().title)
+        assertTrue(tiles.last().detail.contains("Datos insuficientes"))
     }
     @Test fun thirtyMessages() {
         val chat = (1..30).joinToString("\n") { "21/11/26, 09:%02d - %s: hola".format(it,if (it%2==0) "Ana" else "Sol") }

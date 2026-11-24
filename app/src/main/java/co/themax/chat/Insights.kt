@@ -11,7 +11,7 @@ data class PersonStats(
     val phrases: MutableMap<String, Int> = mutableMapOf()
 )
 
-data class Insights(val people: Map<String, PersonStats>, val days: Long, val activeDays: Int, val flags: FlagReport)
+data class Insights(val people: Map<String, PersonStats>, val days: Long, val activeDays: Int, val flags: FlagReport, val interest: InterestDays)
 
 private val word = Regex("""[\p{L}]+""")
 private val ignored = setOf("que","por","para","con","las","los","una","del","pero","como","más","ese","esa","esto","está","muy","hay","son","eso","mis","sus","soy","era","sin","pues","porque","también")
@@ -48,7 +48,7 @@ fun collectInsights(rows: List<Message>): Insights {
         }
     }
     val days = rows.map { it.time.toLocalDate() }.toSet()
-    return Insights(people, Duration.between(days.min().atStartOfDay(), days.max().atStartOfDay()).toDays()+1, days.size, analyzeFlags(rows))
+    return Insights(people, Duration.between(days.min().atStartOfDay(), days.max().atStartOfDay()).toDays()+1, days.size, analyzeFlags(rows), interestDays(rows))
 }
 
 private fun top(p: PersonStats) = p.words.entries.sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key })
@@ -82,17 +82,6 @@ fun insightCards(report: Report, self: String, other: String, label: String): Li
     }
     fun card(title: String, color: Long, value: String, note: String) = Tile(title,color,detail=value,note=note)
     return listOf(
-        Tile("Nivel de interés",0xffb8f2dc,detail=when {
-            data.activeDays == 1 -> "Solo vemos un día de conversación."
-            initiative > 0 && theirs > 0 -> "Los dos han dado el primer paso para hablar."
-            initiative > 0 -> "Tú abriste cada conversación registrada."
-            else -> "$label abrió cada conversación registrada."
-        }, note="Un inicio es el primer mensaje del archivo o el primero tras 8 horas de pausa. Estos datos describen cómo conversan; la atracción solo pueden aclararla ustedes.",
-            comparison = Comparison(label, listOf(
-                Metric("Inicios de conversación",initiative,theirs),
-                Metric("Mensajes con preguntas",a.questions,b.questions),
-                Metric("Posibles invitaciones",a.plans,b.plans)
-            ))),
         card("Mensaje más largo",0xffffe6ab, most.longest.ifEmpty { "Sin texto disponible" },
             "$author · ${most.longestLength} caracteres." + if (most.longestLength > 360) " Se muestra el comienzo." else ""),
         data.flags.tile(self, label),
@@ -110,6 +99,7 @@ fun insightCards(report: Report, self: String, other: String, label: String): Li
             else -> "No hay una intención explícita que podamos identificar. Puedes preguntar: «¿Cómo te has sentido hablando conmigo?»"
         }, "Lectura posible de sus palabras. Solo esa persona puede confirmar lo que quiso decir."),
         card("Expresiones que ambos usan",0xffe6d2f9,shared.ifEmpty { "Todavía no encontramos una expresión compartida." },
-            "Pares de palabras que ambos escribieron. La comparación solo incluye este chat.$terms")
+            "Pares de palabras que ambos escribieron. La comparación solo incluye este chat.$terms"),
+        data.interest.tile(other, label)
     )
 }

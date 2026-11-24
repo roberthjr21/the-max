@@ -28,6 +28,11 @@ PYTHON
   adb shell input tap "$x" "$y"
 }
 if [ "$code" -ge 6 ]; then
+  if [ "$code" -ge 8 ]; then
+    tap_text 'Menú'
+    contains "The Max · v$(jq -r .versionName downloads/latest.json)"
+    contains 'Buscar actualización'
+  fi
   tap_text 'Ajustes de IA'
   contains 'OpenAI'
   tap_text 'Cancelar'
@@ -42,6 +47,9 @@ if [ "$code" -ge 2 ]; then
   titles=('Nivel de interés' 'Mensaje más largo' 'Red flags' 'Lo que notamos' 'Palabras top' 'Estilo de apego' 'Cómo fue el chat' '¿Te dejó en visto?' 'The Move' 'Lo que podría querer decirte' 'Solo ustedes dos dicen esto')
   if [ "$code" -ge 4 ]; then
     titles=('Nivel de interés' 'Mensaje más largo' 'Red flags' 'Cuántas veces cambiaron de turno' 'Palabras top' 'Quién suele dar el primer paso' 'Cómo fue el chat' 'Respuestas después de una pausa' 'Qué podrías responder' 'Lo que podría querer decirte' 'Expresiones que ambos usan')
+  fi
+  if [ "$code" -ge 8 ]; then
+    titles=("${titles[@]:1}" 'Interés en la conversación')
   fi
   size=$(adb shell wm size | tail -1 | awk '{print $NF}' | tr -d '\r')
   width=${size%x*}
