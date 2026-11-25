@@ -1,0 +1,7 @@
+21/11/26, 09:00 - Ana: Mira https://www.ejemplo.com/compras hoy
+21/11/26, 09:01 - Sol: ¡Café!
+21/11/26, 09:02 - Ana cambió el asunto a «Plan: viernes»
+21/11/26, 09:03 - Ana: Café
+21/11/26, 09:06 - Sol: Café
+21/11/26, 09:07 - Ana: Hola
+21/11/26, 16:47 - Sol: Café

@@ -1,11 +1,14 @@
 package co.themax.chat
 
+import kotlinx.coroutines.*
 import java.io.InputStream
 import java.time.LocalDateTime
 import java.time.Duration
 import java.util.zip.ZipInputStream
 
-data class Message(val time: LocalDateTime, val sender: String, val body: String)
+data class Message(val time: LocalDateTime, val sender: String, val body: String) {
+    val normalized = normalizeChat(body)
+}
 data class Report(val names: List<String>, val counts: Map<String, Int>, val delays: Map<String, Long>,
     val starts: Map<String, Int>, val first: Message?, val peak: String, val words: List<String>, val emoji: String?, val insights: Insights)
 
@@ -20,12 +23,12 @@ fun readExport(input: InputStream): String {
     if (!zipped) return readTextLimited(stream)
     ZipInputStream(stream).use { zip ->
         repeat(32) {
-            val entry = zip.nextEntry ?: error("El ZIP no contiene una conversación .txt.")
+            val entry = zip.nextEntry ?: throw ChatError("El ZIP no contiene una conversación .txt.")
             if (!entry.isDirectory && entry.name.endsWith(".txt", true)) return readTextLimited(zip)
-            require(entry.isDirectory) { "Exporta el chat sin archivos multimedia." }
+            if (!entry.isDirectory) throw ChatError("Exporta el chat sin archivos multimedia.")
         }
     }
-    error("El ZIP contiene demasiadas entradas.")
+    throw ChatError("El ZIP contiene demasiadas entradas.")
 }
 
 private fun readTextLimited(input: InputStream): String {
@@ -34,13 +37,13 @@ private fun readTextLimited(input: InputStream): String {
     while (true) {
         val n = input.read(buffer)
         if (n < 0) break
-        require(out.size() + n <= limit) { "El chat supera el límite de 16 MB." }
+        if (out.size() + n > limit) throw ChatError("El chat supera el límite de 16 MB.")
         out.write(buffer, 0, n)
     }
     return out.toString("UTF-8")
 }
 
-fun analyze(text: String): Report {
+private fun parse(text: String): List<Message> {
     val rows = mutableListOf<Message>()
     val body = StringBuilder()
     var pending: Message? = null
@@ -60,7 +63,7 @@ fun analyze(text: String): Report {
         flush()
         val payload = parts[8]
         val split = payload.indexOf(": ")
-        if (split < 1) continue
+        if (split < 1 || systemPrefix.containsMatchIn(payload.substring(0, split))) continue
         val marker = parts[7].lowercase()
         val hour = parts[4].toInt().let { if (marker.isEmpty()) it else it % 12 + if (marker.startsWith("p")) 12 else 0 }
         if (marker.isNotEmpty() && parts[4].toInt() !in 1..12) continue
@@ -74,9 +77,28 @@ fun analyze(text: String): Report {
         body.append(payload.substring(split+2))
     }
     flush()
-    require(rows.isNotEmpty()) { "No se reconocieron mensajes. Revisa que el archivo incluya la fecha, la hora y el remitente." }
+    if (rows.isEmpty()) throw ChatError("No se reconocieron mensajes. Revisa que el archivo incluya la fecha, la hora y el remitente.")
     val counts = rows.groupingBy { it.sender }.eachCount()
-    require(counts.size == 2) { "Para este resumen se necesitan dos participantes. Encontramos ${counts.size}." }
+    if (counts.size == 2) return rows
+    val ranked = counts.entries.sortedByDescending { it.value }
+    val noise = ranked.drop(2).sumOf { it.value }
+    if (!(ranked.size > 2 && ranked[1].value > ranked[2].value &&
+        (noise <= 3 || noise.toLong() * 100 <= rows.size.toLong() * 2))) throw ChatError("Elige un chat individual. Encontramos ${counts.size} participantes.")
+    val names = ranked.take(2).map { it.key }.toSet()
+    return rows.filter { it.sender in names }
+}
+
+private val systemPrefix = Regex("""(?i)\s(?:cambió el (?:asunto|nombre|ícono)|changed the (?:subject|group name)|cambió la descripción)\b""")
+fun analyze(text: String): Report = runBlocking { analyzeChat(text) }
+suspend fun analyzeChat(text: String, progress: suspend (String) -> Unit = {}): Report = withContext(Dispatchers.Default) {
+    val rows = parse(text)
+    progress("Analizando señales")
+    val flags = async { analyzeFlags(rows) }
+    val stats = async { collectPeople(rows) }
+    val interest = async { interestDays(rows) }
+    val words = async { topWords(rows) }
+    val emoji = async { favoriteEmoji(rows) }
+    val counts = rows.groupingBy { it.sender }.eachCount()
     val starts = mutableMapOf(rows.first().sender to 1)
     val delays = mutableMapOf<String, MutableList<Long>>()
     for (i in 1 until rows.size) {
@@ -86,14 +108,36 @@ fun analyze(text: String): Report {
         else if (gap >= 0 && prev.sender != msg.sender) delays.getOrPut(msg.sender) { mutableListOf() }.add(gap)
     }
     val peak = rows.groupingBy { it.time.toLocalDate() }.eachCount().maxBy { it.value }
-    val tokens = Regex("""[\p{L}]{3,}""")
-    val stop = setOf("que","con","por","del","para","los","las","una","pero","como","más","multimedia","omitido","archivo","adjunto")
-    val words = rows.asSequence().flatMap { tokens.findAll(it.body.lowercase()).map { m -> m.value } }
-        .filter { it !in stop }.groupingBy { it }.eachCount().entries.sortedByDescending { it.value }.take(3).map { it.key }
+    val insights = Insights(stats.await(), Duration.between(rows.minOf { it.time }.toLocalDate().atStartOfDay(), rows.maxOf { it.time }.toLocalDate().atStartOfDay()).toDays()+1,
+        rows.mapTo(mutableSetOf()) { it.time.toLocalDate() }.size, flags.await(), interest.await())
+    val top = words.await()
+    val favorite = emoji.await()
+    progress("Preparando tarjetas")
+    Report(counts.keys.toList(), counts, delays.mapValues { medianMinutes(it.value) }, starts, rows.firstNotNullOfOrNull { row -> visibleBody(row.body)?.let { row.copy(body = it) } },
+        "${peak.key.dayOfMonth}/${peak.key.monthValue}/${peak.key.year} · ${peak.value} mensajes", top, favorite, insights)
+}
+
+private fun topWords(rows: List<Message>) = rows.asSequence().flatMap { wordTokens(it.normalized) }
+    .filter { it.length >= 3 && it !in ignored }.groupingBy { it }.eachCount()
+    .entries.sortedByDescending { it.value }.take(3).map { it.key }
+
+internal fun medianMinutes(values: List<Long>): Long {
+    val ordered = values.sorted()
+    val middle = ordered.size / 2
+    return (ordered[(ordered.size - 1) / 2] + ordered[middle]) / 2
+}
+
+internal fun delayText(minutes: Long?): String = when {
+    minutes == null -> "Sin datos"
+    minutes == 0L -> "<1 min"
+    minutes < 60 -> "$minutes min"
+    minutes % 60 == 0L -> "${minutes / 60} h"
+    else -> "${minutes / 60} h ${minutes % 60} min"
+}
+
+private fun favoriteEmoji(rows: List<Message>): String? {
     val emojiUnit = """[\x{1F300}-\x{1FAFF}\u2600-\u27BF]\uFE0F?[\x{1F3FB}-\x{1F3FF}]?"""
     val emojiPattern = Regex("""[\x{1F1E6}-\x{1F1FF}]{2}|$emojiUnit(?:\u200D$emojiUnit)*""")
-    val emoji = rows.asSequence().flatMap { emojiPattern.findAll(it.body).map { m -> m.value } }
+    return rows.asSequence().flatMap { emojiPattern.findAll(it.body).map { m -> m.value } }
         .groupingBy { it }.eachCount().maxByOrNull { it.value }?.key
-    return Report(counts.keys.toList(), counts, delays.mapValues { it.value.average().toLong() }, starts, rows.firstNotNullOfOrNull { row -> visibleBody(row.body)?.let { row.copy(body = it) } },
-        "${peak.key.dayOfMonth}/${peak.key.monthValue}/${peak.key.year} · ${peak.value} mensajes", words, emoji, collectInsights(rows))
 }

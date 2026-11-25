@@ -4,6 +4,8 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.provider.Settings
+import androidx.activity.SystemBarStyle
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -73,6 +75,8 @@ class MainActivity : ComponentActivity() {
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge(statusBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT))
         setContent { MaterialTheme(colorScheme = lightColorScheme(primary = green)) { Screen() } }
     }
 
@@ -84,24 +88,28 @@ class MainActivity : ComponentActivity() {
         var me by chat::me
         var hidden by rememberSaveable { mutableStateOf(false) }
         var busy by remember { mutableStateOf(false) }
+        var stage by remember { mutableStateOf("Procesando…") }
         var notice by remember { mutableStateOf<String?>(null) }
         var update by remember { mutableStateOf<Update?>(null) }
         var stagedPath by rememberSaveable { mutableStateOf<String?>(null) }
         fun work(operation: suspend () -> Unit) {
             if (busy) return
+            stage = "Procesando…"
             busy = true
             scope.launch {
                 try { operation() }
                 catch (e: CancellationException) { throw e }
-                catch (e: Exception) { notice = e.localizedMessage ?: "No se pudo completar la operación." }
+                catch (e: Exception) { notice = displayError(e) }
                 finally { busy = false }
             }
         }
         fun load(uri: Uri) = work {
             require(uri.scheme == "content") { "Selecciona un archivo desde el teléfono." }
-            pending = withContext(Dispatchers.IO) {
-                contentResolver.openInputStream(uri)?.use { analyze(readExport(it)) } ?: error("No pudimos abrir el archivo.")
+            stage = "Leyendo el chat"
+            val source = withContext(Dispatchers.IO) {
+                contentResolver.openInputStream(uri)?.use(::readExport) ?: throw ChatError("No pudimos abrir el archivo.")
             }
+            pending = analyzeChat(source) { value -> withContext(Dispatchers.Main) { stage = value } }
         }
         val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let { load(it) } }
         fun install() {
@@ -159,7 +167,7 @@ class MainActivity : ComponentActivity() {
             }, Modifier.fillMaxWidth(), fontSize = 32.sp, lineHeight = 36.sp, fontWeight = FontWeight.Black, color = ink)
             val cards = remember(report, self, label) { listOf(
                 Tile("Mensajes",0xffa5f3db,"tú" to report.counts.getValue(self).toString(),label to report.counts.getValue(other).toString()),
-                Tile("Tiempo medio de respuesta",0xffd4befb,"tú" to delayText(report.delays[self]),label to delayText(report.delays[other]),note="Tiempo entre turnos, con pausas menores a 8 horas."),
+                Tile("Tiempo típico de respuesta",0xffd4befb,"tú" to delayText(report.delays[self]),label to delayText(report.delays[other]),note="Mediana entre cambios de turno con pausas menores a 8 horas."),
                 Tile("Quién rompe el silencio",0xffffb6cf,"tú" to (report.starts[self] ?: 0).toString(),label to (report.starts[other] ?: 0).toString(),note="Cuenta el inicio del chat y las pausas de 8 horas o más."),
                 Tile("Primer mensaje",0xffffe8a6,
                     detail=report.first?.body?.take(400) ?: "Este archivo no contiene mensajes con texto visible.",
@@ -199,12 +207,11 @@ class MainActivity : ComponentActivity() {
             } else Text("En WhatsApp, exporta un chat individual sin multimedia. El análisis se hace en este teléfono.",color = ink)
             Spacer(Modifier.height(12.dp))
         }
-        if (busy) AlertDialog(onDismissRequest = {},title = { Text("Un momento…") },text = { LinearProgressIndicator() },confirmButton = {})
+        if (busy) AlertDialog(onDismissRequest = {},title = { Text(stage) },text = { LinearProgressIndicator() },confirmButton = {})
         pending?.let { candidate -> AlertDialog(onDismissRequest = { pending = null },title = { Text("¿Cuál de los dos eres tú?") },
             text = { Column { candidate.names.forEach { person -> TextButton(onClick = {
                 chat.resetAi()
                 me = person; result = candidate; pending = null
-                if (aiStore.automatic(aiStore.provider)) chat.startAi(aiStore, candidate)
             }) { Text(person) } } } },confirmButton = {}) }
         update?.let { available -> AlertDialog(onDismissRequest = { update = null },title = { Text("The Max ${available.name}") },
             text = { Text("Hay una versión nueva. Android te pedirá confirmar la instalación.") },
@@ -217,7 +224,6 @@ class MainActivity : ComponentActivity() {
             confirmButton = { TextButton(onClick = { notice = null }) { Text("Entendido") } }) }
     }
 }
-private fun delayText(n: Long?) = when (n) { null -> "Sin datos"; 0L -> "<1 min"; else -> "$n min" }
 data class Metric(val label: String, val self: Int, val other: Int)
 data class Comparison(val contact: String, val rows: List<Metric>)
 data class Tile(val title: String,val tint: Long,val left: Pair<String,String>? = null,val right: Pair<String,String>? = null,
@@ -225,9 +231,7 @@ data class Tile(val title: String,val tint: Long,val left: Pair<String,String>? 
 
 @Composable
 private fun TileView(tile: Tile, action: (() -> Unit)?, actionLabel: String, share: (() -> Unit)?) {
-    val fill = Color(tile.tint)
-    Column(Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(fill,fill.copy(alpha=.83f))), RoundedCornerShape(25.dp))
-        .padding(22.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+    PastelCard(tile.tint) {
         Text(tile.title,fontWeight = FontWeight.ExtraBold,fontSize = 19.sp,color = ink)
         if (tile.left != null && tile.right != null) Row(Modifier.fillMaxWidth()) {
             listOf(tile.left,tile.right).forEachIndexed { i, item ->
@@ -271,5 +275,14 @@ private fun TileView(tile: Tile, action: (() -> Unit)?, actionLabel: String, sha
         if (tile.note.isNotEmpty()) { HorizontalDivider(color = ink.copy(alpha = .15f)); Text(tile.note,color = ink,fontSize = 14.sp,lineHeight = 20.sp) }
         if (action != null) Button(onClick = action,modifier = Modifier.fillMaxWidth()) { Text(actionLabel) }
         if (share != null) TextButton(onClick = share) { Text("Compartir tarjeta",color = ink) }
+    }
+}
+
+@Composable
+internal fun PastelCard(tint: Long, content: @Composable ColumnScope.() -> Unit) {
+    val fill = Color(tint)
+    Column(Modifier.fillMaxWidth().background(Brush.verticalGradient(listOf(fill,fill.copy(alpha=.83f))), RoundedCornerShape(25.dp))
+        .padding(22.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        content()
     }
 }

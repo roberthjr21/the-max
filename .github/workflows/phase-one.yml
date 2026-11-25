@@ -1,0 +1,78 @@
+name: Verificar fase 1
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  benchmark:
+    if: github.head_ref == 'feature/1.5.3-rendimiento'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - run: ./gradlew testDebugUnitTest assembleDebug
+      - run: bash scripts/benchmark-phase1.sh
+  emulator:
+    if: github.head_ref == 'feature/1.5.3-rendimiento'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Preparar copia R8 de prueba con la identidad de depuración del runner
+        run: |
+          # El punto de entrada sintético solo existe en esta copia temporal del runner.
+          mkdir -p app/src/release/java/co/themax/chat
+          cp app/src/androidTest/java/co/themax/chat/ReleaseAiTest.kt app/src/release/java/co/themax/chat/
+          cat > app/src/release/AndroidManifest.xml <<'XML'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <instrumentation android:name="co.themax.chat.ReleaseAiInstrumentation"
+                  android:targetPackage="co.themax.chat" />
+          </manifest>
+          XML
+          cat > "$RUNNER_TEMP/emulator.gradle" <<'GRADLE'
+          allprojects {
+              plugins.withId('com.android.application') {
+                  androidComponents.finalizeDsl { dsl ->
+
+
+
+                      dsl.buildTypes.release.signingConfig = dsl.signingConfigs.debug
+                  }
+              }
+          }
+          GRADLE
+          ./gradlew -I "$RUNNER_TEMP/emulator.gradle" assembleRelease
+      - name: Habilitar emulador
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          arch: x86_64
+          disable-animations: true
+          script: |
+            python3 scripts/verify-phase1-ui.py
+            adb shell -T am instrument -w co.themax.chat/co.themax.chat.ReleaseAiInstrumentation | tee "$RUNNER_TEMP/ai-result.txt"
+            grep -Fx 'INSTRUMENTATION_RESULT: resultado=tres proveedores verificados' "$RUNNER_TEMP/ai-result.txt"
+            grep -Fx 'INSTRUMENTATION_CODE: -1' "$RUNNER_TEMP/ai-result.txt"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pantallas-sinteticas
+          path: build/phase1-ui/*.png

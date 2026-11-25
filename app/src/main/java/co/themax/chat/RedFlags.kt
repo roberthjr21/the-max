@@ -7,7 +7,7 @@ import kotlin.math.roundToInt
 data class FlagReading(val title: String, val matches: Boolean, val explanation: String,
     val bySender: Map<String, String> = emptyMap())
 
-data class FlagReport(val counts: Map<String, Int>, val readings: List<FlagReading>, val sample: List<AiLine> = emptyList()) {
+data class FlagReport(val counts: Map<String, Int>, val readings: List<FlagReading>, val sample: List<AiLine> = emptyList(), val flaggedSenders: Set<String> = emptySet()) {
     fun tile(self: String, contact: String): Tile {
         val hits = readings.count { it.matches }
         val summary = when {
@@ -59,10 +59,8 @@ private enum class Signal(val title: String, val description: String, pattern: S
 private val quotedText = Regex("""[«“"‘'][^»”"’'\n]*[»”"’']""")
 private val reportedSpeech = rule("""(?:me|te|le) (?:dijo|dijeron|escribio)|por ejemplo|un ejemplo|no (?:digas|dije|me digas)|si (?:alguien|te) (?:te )?dice|la cancion dice""")
 private val negated = Regex("""\b(?:no|nunca|jamas)(?: (?:te|yo))*\s*$""")
-private val diacritics = Regex("""\p{M}+""")
 private val clauses = Regex("""[.!?;\n]+""")
-private fun directText(raw: String): String {
-    val plain = Normalizer.normalize(raw.lowercase(java.util.Locale.ROOT), Normalizer.Form.NFD).replace(diacritics, "")
+private fun directText(plain: String): String {
     return quotedText.replace(plain, " ").split(clauses)
         .filterNot { it.trimStart().startsWith(">") || reportedSpeech.containsMatchIn(it) }.filter { it.isNotBlank() }.joinToString("\n").trim()
 }
@@ -93,7 +91,7 @@ fun analyzeFlags(input: List<Message>): FlagReport {
         val body = visibleBody(message.body)?.takeUnless(systemRecord::matches) ?: continue
         val sender = message.sender
         counts[sender] = counts.getOrDefault(sender, 0) + 1
-        val text = directText(body)
+        val text = directText(message.normalized)
         val last = previous
         val before = earlier
         val reply = last != null && last.sender != sender && Duration.between(last.time, message.time) <= Duration.ofHours(2)
@@ -121,5 +119,5 @@ fun analyzeFlags(input: List<Message>): FlagReport {
             val n = matches.getOrDefault(sender, 0)
             "$n de $total mensajes (${(100.0 * n / total).roundToInt()} %)"
         })
-    }, fragment(ordered))
+    }, fragment(ordered), hits.values.flatMap { it.keys }.toSet())
 }

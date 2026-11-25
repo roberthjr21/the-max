@@ -6,11 +6,19 @@ android {
     namespace 'co.themax.chat'
     compileSdk 35
     defaultConfig {
+        testInstrumentationRunner 'co.themax.chat.ReleaseAiInstrumentation'
         applicationId 'co.themax.chat'
         minSdk 26
         targetSdk 35
-        versionCode 8
-        versionName '1.5.2'
+        versionCode 9
+        versionName '1.5.3'
+    }
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt')
+        }
     }
     buildFeatures { compose true; buildConfig true }
     composeOptions { kotlinCompilerExtensionVersion '1.5.14' }
@@ -20,6 +28,8 @@ android {
 dependencies {
     implementation 'androidx.activity:activity-compose:1.9.3'
     implementation 'androidx.compose.material3:material3:1.3.1'
+
+
     testImplementation 'org.json:json:20240303'
     testImplementation 'junit:junit:4.13.2'
 }
