@@ -37,7 +37,7 @@ jobs:
           # La anotación de compilador IncompatibleModifiers referencia una clase exclusiva del JDK.
           cat > "$RUNNER_TEMP/test-r8.pro" <<'RULES'
           -dontwarn javax.lang.model.element.Modifier
-          -keep class androidx.test.** { *; }
+          -keep class co.themax.chat.ReleaseAiInstrumentation { *; }
           -keep class co.themax.chat.ReleaseAiTest { *; }
           -keep class org.junit.** { *; }
           -keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
@@ -45,9 +45,9 @@ jobs:
           cat > "$RUNNER_TEMP/emulator.gradle" <<'GRADLE'
           allprojects {
               plugins.withId('com.android.application') {
-                  dependencies.add('androidTestImplementation', 'androidx.test:runner:1.6.2')
                   androidComponents.finalizeDsl { dsl ->
                       dsl.buildTypes.release.testProguardFiles(new File(System.getenv('RUNNER_TEMP'), 'test-r8.pro'))
+                      dsl.defaultConfig.testInstrumentationRunner = 'co.themax.chat.ReleaseAiInstrumentation'
                       dsl.testBuildType = 'release'
                       dsl.buildTypes.release.signingConfig = dsl.signingConfigs.debug
                   }
@@ -67,7 +67,10 @@ jobs:
           disable-animations: true
           script: |
             python3 scripts/verify-phase1-ui.py
-            ./gradlew -I "$RUNNER_TEMP/emulator.gradle" connectedReleaseAndroidTest
+            adb install -r app/build/outputs/apk/androidTest/release/*-androidTest.apk
+            adb shell -T am instrument -w co.themax.chat.test/co.themax.chat.ReleaseAiInstrumentation | tee "$RUNNER_TEMP/ai-result.txt"
+            grep -Fx 'INSTRUMENTATION_RESULT: resultado=tres proveedores verificados' "$RUNNER_TEMP/ai-result.txt"
+            grep -Fx 'INSTRUMENTATION_CODE: -1' "$RUNNER_TEMP/ai-result.txt"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
