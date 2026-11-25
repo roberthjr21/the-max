@@ -56,3 +56,23 @@ class ReleaseAiTest {
         assertEquals(3,sent.size)
     }
 }
+
+/** Ejecuta la misma prueba en la copia reducida sin cargar la infraestructura de AndroidX. */
+class ReleaseAiInstrumentation : android.app.Instrumentation() {
+    override fun onCreate(arguments: android.os.Bundle?) {
+        super.onCreate(arguments)
+        start()
+    }
+
+    override fun onStart() {
+        val result = android.os.Bundle()
+        try {
+            ReleaseAiTest().privateFixturePassesThroughAllThreeClients()
+            result.putString("resultado", "tres proveedores verificados")
+            finish(android.app.Activity.RESULT_OK, result)
+        } catch (error: Throwable) {
+            result.putString("fallo", android.util.Log.getStackTraceString(error))
+            finish(android.app.Activity.RESULT_CANCELED, result)
+        }
+    }
+}
