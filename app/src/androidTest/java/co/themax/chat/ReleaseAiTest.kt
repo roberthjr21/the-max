@@ -1,9 +1,5 @@
 package co.themax.chat
 
-import androidx.test.ext.junit.runners.AndroidJUnit4
-import org.junit.Assert.*
-import org.junit.Test
-import org.junit.runner.RunWith
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.net.URL
@@ -14,9 +10,8 @@ import javax.net.ssl.HttpsURLConnection
 import org.json.JSONArray
 import org.json.JSONObject
 
-@RunWith(AndroidJUnit4::class)
 class ReleaseAiTest {
-    @Test fun privateFixturePassesThroughAllThreeClients() {
+    fun privateFixturePassesThroughAllThreeClients() {
         val model = """{"porcentaje":0,"resumen":"Sin señales en la muestra.","redFlags":[]}"""
         fun objects(value: JSONObject) = JSONArray().put(value)
         val sent = mutableListOf<ByteArrayOutputStream>()
@@ -49,11 +44,11 @@ class ReleaseAiTest {
         }
         for (provider in Provider.values()) {
             val result = analyzeOnline(provider,"clave-ficticia",DEFAULT_PROMPT,listOf(AiLine("A","Hola de prueba")))
-            assertEquals(0,result.percent)
-            assertTrue(result.findings.isEmpty())
-            assertTrue(sent.last().toString("UTF-8").contains("Hola de prueba"))
+            check(result.percent == 0)
+            check(result.findings.isEmpty())
+            check(sent.last().toString("UTF-8").contains("Hola de prueba"))
         }
-        assertEquals(3,sent.size)
+        check(sent.size == 3)
     }
 }
 
