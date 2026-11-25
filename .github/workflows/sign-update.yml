@@ -1,0 +1,118 @@
+name: Preparar actualización firmada
+on:
+  push:
+    branches: [main]
+    paths: ['app/build.gradle', '.github/workflows/sign-update.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: firma-the-max
+  cancel-in-progress: false
+
+jobs:
+  compilar:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      nueva: ${{ steps.version.outputs.nueva }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - run: ./gradlew testDebugUnitTest assembleRelease
+      - id: version
+        run: |
+          set -euo pipefail
+          apk=app/build/outputs/apk/release/app-release-unsigned.apk
+          code=$(jq -er '.elements | select(length == 1) | .[0].versionCode' app/build/outputs/apk/release/output-metadata.json)
+          actual=$(jq -er '.versionCode' downloads/latest.json)
+          if (( code > actual )); then
+            cp "$apk" unsigned.apk
+            echo nueva=true >> "$GITHUB_OUTPUT"
+          else
+            echo nueva=false >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: steps.version.outputs.nueva == 'true'
+        with:
+          name: release-sin-firmar
+          path: unsigned.apk
+          retention-days: 1
+
+  firmar:
+    needs: compilar
+    if: needs.compilar.outputs.nueva == 'true'
+    environment: firma
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-sin-firmar
+          path: ${{ runner.temp }}/compilacion
+      - name: Firmar y comparar el certificado con la versión publicada
+        env:
+          FIRMA: ${{ secrets.THE_MAX_FIRMA_ZIP_B64 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          : "${FIRMA:?Configura THE_MAX_FIRMA_ZIP_B64 en el entorno firma}"
+          privado=$(mktemp -d)
+          trap 'rm -rf -- "$privado"' EXIT
+          printf '%s' "$FIRMA" | base64 --decode > "$privado/respaldo.zip"
+          unset FIRMA
+          unzip -p "$privado/respaldo.zip" the-max.p12 > "$privado/clave.p12"
+          unzip -p "$privado/respaldo.zip" password.txt > "$privado/pass"
+          export PATH="$ANDROID_HOME/build-tools/35.0.0:$PATH"
+          apk="$RUNNER_TEMP/compilacion/unsigned.apk"
+          apksigner sign --ks "$privado/clave.p12" --ks-pass "file:$privado/pass" --ks-key-alias the-max --v4-signing-enabled false --out "$privado/nuevo.apk" "$apk"
+          cert() { apksigner verify --print-certs "$1" | sed -n 's/^Signer #[0-9]\+ certificate SHA-256 digest: //p'; }
+          actual=$(jq -er '.versionCode' downloads/latest.json)
+          anterior=$(cert "downloads/The-Max-$actual.apk")
+          nuevo=$(cert "$privado/nuevo.apk")
+          [[ "$anterior" =~ ^[[:xdigit:]]{64}$ && "$anterior" == "$nuevo" ]]
+          bash scripts/package-release.sh "$privado/nuevo.apk"
+          code=$(jq -er '.versionCode' downloads/latest.json)
+          mkdir canal
+          cp downloads/latest.json "downloads/The-Max-$code.apk" canal/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: actualizacion-firmada
+          path: canal/
+          if-no-files-found: error
+
+  preparar-rama:
+    needs: firmar
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: actualizacion-firmada
+          path: ${{ runner.temp }}/canal
+      - name: Preparar los dos archivos para revisión del propietario
+        run: |
+          set -euo pipefail
+          canal="$RUNNER_TEMP/canal"
+          code=$(jq -er '.versionCode' "$canal/latest.json")
+          apk="The-Max-$code.apk"
+          hash=$(jq -er '.sha256' "$canal/latest.json")
+          printf '%s  %s\n' "$hash" "$canal/$apk" | sha256sum --check
+          git fetch origin main
+          git diff --quiet "$GITHUB_SHA" origin/main -- app gradle build.gradle settings.gradle gradle.properties scripts/package-release.sh downloads/latest.json || { echo 'Cambió la base. Ejecuta el flujo sobre main actualizada.'; exit 1; }
+          rama="actualizacion/codigo-$code-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          git switch -c "$rama" origin/main
+          cp "$canal/latest.json" "$canal/$apk" downloads/
+          git add -- downloads/latest.json "downloads/$apk"
+          git -c user.name='The Max' -c user.email='github-actions[bot]@users.noreply.github.com' commit -m "Preparar actualización firmada (código $code)"
+          git push origin "$rama"
+          echo "[Revisar y abrir el PR de publicación](https://github.com/$GITHUB_REPOSITORY/compare/main...$rama?expand=1)" >> "$GITHUB_STEP_SUMMARY"
