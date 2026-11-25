@@ -34,27 +34,28 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Preparar copia R8 de prueba con la identidad de depuración del runner
         run: |
-          # La anotación de compilador IncompatibleModifiers referencia una clase exclusiva del JDK.
-          cat > "$RUNNER_TEMP/test-r8.pro" <<'RULES'
-          -dontwarn javax.lang.model.element.Modifier
-          -keep class co.themax.chat.ReleaseAiInstrumentation { *; }
-          -keep class co.themax.chat.ReleaseAiTest { *; }
-          -keep class org.junit.** { *; }
-          -keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
-          RULES
+          # El punto de entrada sintético solo existe en esta copia temporal del runner.
+          mkdir -p app/src/release/java/co/themax/chat
+          cp app/src/androidTest/java/co/themax/chat/ReleaseAiTest.kt app/src/release/java/co/themax/chat/
+          cat > app/src/release/AndroidManifest.xml <<'XML'
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <instrumentation android:name="co.themax.chat.ReleaseAiInstrumentation"
+                  android:targetPackage="co.themax.chat" />
+          </manifest>
+          XML
           cat > "$RUNNER_TEMP/emulator.gradle" <<'GRADLE'
           allprojects {
               plugins.withId('com.android.application') {
                   androidComponents.finalizeDsl { dsl ->
-                      dsl.buildTypes.release.testProguardFiles(new File(System.getenv('RUNNER_TEMP'), 'test-r8.pro'))
-                      dsl.defaultConfig.testInstrumentationRunner = 'co.themax.chat.ReleaseAiInstrumentation'
-                      dsl.testBuildType = 'release'
+
+
+
                       dsl.buildTypes.release.signingConfig = dsl.signingConfigs.debug
                   }
               }
           }
           GRADLE
-          ./gradlew -I "$RUNNER_TEMP/emulator.gradle" assembleRelease assembleReleaseAndroidTest
+          ./gradlew -I "$RUNNER_TEMP/emulator.gradle" assembleRelease
       - name: Habilitar emulador
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -67,8 +68,7 @@ jobs:
           disable-animations: true
           script: |
             python3 scripts/verify-phase1-ui.py
-            adb install -r app/build/outputs/apk/androidTest/release/*-androidTest.apk
-            adb shell -T am instrument -w co.themax.chat.test/co.themax.chat.ReleaseAiInstrumentation | tee "$RUNNER_TEMP/ai-result.txt"
+            adb shell -T am instrument -w co.themax.chat/co.themax.chat.ReleaseAiInstrumentation | tee "$RUNNER_TEMP/ai-result.txt"
             grep -Fx 'INSTRUMENTATION_RESULT: resultado=tres proveedores verificados' "$RUNNER_TEMP/ai-result.txt"
             grep -Fx 'INSTRUMENTATION_CODE: -1' "$RUNNER_TEMP/ai-result.txt"
       - uses: actions/upload-artifact@v4
